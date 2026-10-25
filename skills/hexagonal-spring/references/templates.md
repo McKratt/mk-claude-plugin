@@ -1,12 +1,12 @@
 # Templates: one vertical slice
 
-Example slice: place an order. Base package `com.example.shop`, component `order`.
+Example slice: place an order. Base package `com.example.shop`, component `sales`, bounded context `order`.
 Replace names to fit the user's domain. All code targets Java 25 and Spring Boot.
 
-## Domain (`order/application/domain`)
+## Domain (`sales/order/application/domain`)
 
 ```java
-package com.example.shop.order.application.domain;
+package com.example.shop.sales.order.application.domain;
 
 import java.util.UUID;
 
@@ -22,7 +22,7 @@ public record OrderId(UUID value) {
 ```
 
 ```java
-package com.example.shop.order.application.domain;
+package com.example.shop.sales.order.application.domain;
 
 import java.util.List;
 import java.util.Objects;
@@ -58,12 +58,12 @@ public final class Order {
 }
 ```
 
-## Incoming port and command (`order/application/port/in`)
+## Incoming port and command (`sales/order/application/port/in`)
 
 ```java
-package com.example.shop.order.application.port.in;
+package com.example.shop.sales.order.application.port.in;
 
-import com.example.shop.order.application.domain.OrderId;
+import com.example.shop.sales.order.application.domain.OrderId;
 
 public interface PlaceOrderUseCase {
     OrderId placeOrder(PlaceOrderCommand command);
@@ -71,7 +71,7 @@ public interface PlaceOrderUseCase {
 ```
 
 ```java
-package com.example.shop.order.application.port.in;
+package com.example.shop.sales.order.application.port.in;
 
 import java.util.List;
 import java.util.Objects;
@@ -98,28 +98,28 @@ public record PlaceOrderCommand(List<Line> lines) {
 }
 ```
 
-## Outgoing port (`order/application/port/out`)
+## Outgoing port (`sales/order/application/port/out`)
 
 ```java
-package com.example.shop.order.application.port.out;
+package com.example.shop.sales.order.application.port.out;
 
-import com.example.shop.order.application.domain.Order;
+import com.example.shop.sales.order.application.domain.Order;
 
 public interface SaveOrderPort {
     void save(Order order);
 }
 ```
 
-## Service (`order/application/service`)
+## Service (`sales/order/application/service`)
 
 ```java
-package com.example.shop.order.application.service;
+package com.example.shop.sales.order.application.service;
 
-import com.example.shop.order.application.port.in.PlaceOrderCommand;
-import com.example.shop.order.application.port.in.PlaceOrderUseCase;
-import com.example.shop.order.application.port.out.SaveOrderPort;
-import com.example.shop.order.application.domain.Order;
-import com.example.shop.order.application.domain.OrderId;
+import com.example.shop.sales.order.application.port.in.PlaceOrderCommand;
+import com.example.shop.sales.order.application.port.in.PlaceOrderUseCase;
+import com.example.shop.sales.order.application.port.out.SaveOrderPort;
+import com.example.shop.sales.order.application.domain.Order;
+import com.example.shop.sales.order.application.domain.OrderId;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -147,13 +147,13 @@ class PlaceOrderService implements PlaceOrderUseCase {
 }
 ```
 
-## Web adapter (`order/adapter/in/web`)
+## Web adapter (`sales/order/adapter/in/web`)
 
 ```java
-package com.example.shop.order.adapter.in.web;
+package com.example.shop.sales.order.adapter.in.web;
 
-import com.example.shop.order.application.port.in.PlaceOrderCommand;
-import com.example.shop.order.application.port.in.PlaceOrderUseCase;
+import com.example.shop.sales.order.application.port.in.PlaceOrderCommand;
+import com.example.shop.sales.order.application.port.in.PlaceOrderUseCase;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -189,10 +189,10 @@ class PlaceOrderController {
 
 Map `IllegalArgumentException` from command validation to HTTP 400 with a `@RestControllerAdvice` in this package.
 
-## Persistence adapter (`order/adapter/out/persistence`)
+## Persistence adapter (`sales/order/adapter/out/persistence`)
 
 ```java
-package com.example.shop.order.adapter.out.persistence;
+package com.example.shop.sales.order.adapter.out.persistence;
 
 import jakarta.persistence.*;
 import java.util.List;
@@ -219,7 +219,7 @@ class OrderJpaEntity {
 ```
 
 ```java
-package com.example.shop.order.adapter.out.persistence;
+package com.example.shop.sales.order.adapter.out.persistence;
 
 import jakarta.persistence.Embeddable;
 
@@ -238,7 +238,7 @@ class OrderLineEmbeddable {
 ```
 
 ```java
-package com.example.shop.order.adapter.out.persistence;
+package com.example.shop.sales.order.adapter.out.persistence;
 
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -247,10 +247,10 @@ interface SpringDataOrderRepository extends JpaRepository<OrderJpaEntity, UUID> 
 ```
 
 ```java
-package com.example.shop.order.adapter.out.persistence;
+package com.example.shop.sales.order.adapter.out.persistence;
 
-import com.example.shop.order.application.port.out.SaveOrderPort;
-import com.example.shop.order.application.domain.Order;
+import com.example.shop.sales.order.application.port.out.SaveOrderPort;
+import com.example.shop.sales.order.application.domain.Order;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -278,6 +278,82 @@ class OrderPersistenceAdapter implements SaveOrderPort {
 
 Move mapping into a dedicated `OrderMapper` class once it grows (add `toDomain` for load ports).
 
+## Joining two bounded contexts of the same component (`DomainAdapter`)
+
+Both `order` and `billing` belong to the component `sales`. After an order is placed, `order` asks `billing`
+to create an invoice. `order` never imports anything from `billing` except its incoming port and command,
+and only inside its `DomainAdapter`.
+
+Target context `billing`: incoming port and command (`sales/billing/application/port/in`).
+
+```java
+package com.example.shop.sales.billing.application.port.in;
+
+public interface CreateInvoiceUseCase {
+    void createInvoice(CreateInvoiceCommand command);
+}
+```
+
+```java
+package com.example.shop.sales.billing.application.port.in;
+
+import java.util.Objects;
+import java.util.UUID;
+
+public record CreateInvoiceCommand(UUID orderId, int itemCount) {
+    public CreateInvoiceCommand {
+        Objects.requireNonNull(orderId, "orderId must not be null");
+        if (itemCount <= 0) {
+            throw new IllegalArgumentException("itemCount must be positive");
+        }
+    }
+}
+```
+
+Source context `order`: outgoing port, written in `order`'s own language (`sales/order/application/port/out`).
+
+```java
+package com.example.shop.sales.order.application.port.out;
+
+import com.example.shop.sales.order.application.domain.Order;
+
+public interface CreateInvoicePort {
+    void createInvoiceFor(Order order);
+}
+```
+
+Source context `order`: the `DomainAdapter` (`sales/order/adapter/out/billing`). It implements the port, calls the target's
+incoming port directly and converts `order` types into the target's command.
+
+```java
+package com.example.shop.sales.order.adapter.out.billing;
+
+import com.example.shop.sales.billing.application.port.in.CreateInvoiceCommand;
+import com.example.shop.sales.billing.application.port.in.CreateInvoiceUseCase;
+import com.example.shop.sales.order.application.domain.Order;
+import com.example.shop.sales.order.application.port.out.CreateInvoicePort;
+import org.springframework.stereotype.Component;
+
+@Component
+class BillingDomainAdapter implements CreateInvoicePort {
+
+    private final CreateInvoiceUseCase createInvoiceUseCase;
+
+    BillingDomainAdapter(CreateInvoiceUseCase createInvoiceUseCase) {
+        this.createInvoiceUseCase = createInvoiceUseCase;
+    }
+
+    @Override
+    public void createInvoiceFor(Order order) {
+        int itemCount = order.lines().stream().mapToInt(Order.Line::quantity).sum();
+        createInvoiceUseCase.createInvoice(new CreateInvoiceCommand(order.id().value(), itemCount));
+    }
+}
+```
+
+`PlaceOrderService` then takes a `CreateInvoicePort` in its constructor and calls
+`createInvoicePort.createInvoiceFor(order)` after saving. It never sees `billing`.
+
 ## Architecture test (ArchUnit)
 
 Add `com.tngtech.archunit:archunit-junit5` with test scope, using the latest release from Maven Central.
@@ -285,6 +361,9 @@ Add `com.tngtech.archunit:archunit-junit5` with test scope, using the latest rel
 ```java
 package com.example.shop;
 
+import static com.tngtech.archunit.base.DescribedPredicate.not;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import com.tngtech.archunit.core.importer.ImportOption;
@@ -325,6 +404,20 @@ class ArchitectureTest {
     static final ArchRule nothingDependsOnConfiguration = noClasses()
             .that().resideOutsideOfPackage("com.example.shop.configuration..")
             .should().dependOnClassesThat().resideInAPackage("com.example.shop.configuration..");
+
+    // One pair of rules per source -> target bounded context, for example order -> billing.
+    @ArchTest
+    static final ArchRule orderReachesBillingOnlyThroughItsDomainAdapter = noClasses()
+            .that().resideInAPackage("com.example.shop.sales.order..")
+            .and().resideOutsideOfPackage("com.example.shop.sales.order.adapter.out.billing..")
+            .should().dependOnClassesThat().resideInAPackage("com.example.shop.sales.billing..");
+
+    @ArchTest
+    static final ArchRule orderDomainAdapterUsesOnlyBillingIncomingPorts = classes()
+            .that().resideInAPackage("com.example.shop.sales.order.adapter.out.billing..")
+            .should().onlyDependOnClassesThat(
+                    not(resideInAPackage("com.example.shop.sales.billing.."))
+                            .or(resideInAPackage("com.example.shop.sales.billing.application.port.in..")));
 }
 ```
 
@@ -354,12 +447,12 @@ Place other general `@Configuration` classes here (web, security, serialization)
 Service test with a mocked outgoing port:
 
 ```java
-package com.example.shop.order.application.service;
+package com.example.shop.sales.order.application.service;
 
 import static org.mockito.Mockito.*;
 
-import com.example.shop.order.application.port.in.PlaceOrderCommand;
-import com.example.shop.order.application.port.out.SaveOrderPort;
+import com.example.shop.sales.order.application.port.in.PlaceOrderCommand;
+import com.example.shop.sales.order.application.port.out.SaveOrderPort;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -380,7 +473,7 @@ class PlaceOrderServiceTest {
 Command validation test:
 
 ```java
-package com.example.shop.order.application.port.in;
+package com.example.shop.sales.order.application.port.in;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 

@@ -16,17 +16,18 @@ Ready-to-adapt code lives in [references/templates.md](references/templates.md).
 Ask only for what is missing, in one short message:
 
 - Group ID, artifact ID and **base package** (for example `com.example.shop`)
-- First **bounded context / component** name (for example `order`)
+- **Component** name (for example `sales`) and its first **bounded context** name (for example `order`)
 - Build tool: Maven (default) or Gradle
 - Persistence: Spring Data JPA (default), none, or other
 - Single module (default) or multi-module (see section 6)
 
 ## 2. Package structure
 
-One top-level package per component, with this layout inside:
+One top-level package per component. A component holds one or more **bounded contexts**, and each bounded context
+is its own hexagon with this layout:
 
 ```
-<base>/<component>/
+<base>/<component>/<context>/
 ├── application/
 │   ├── domain/                  # entities, value objects, domain rules
 │   ├── port/
@@ -35,7 +36,8 @@ One top-level package per component, with this layout inside:
 │   └── service/                 # implements incoming ports, uses outgoing ports
 └── adapter/
     ├── in/web/                  # controllers, web models
-    └── out/persistence/         # persistence adapter, JPA entities, mappers, Spring Data repositories
+    ├── out/persistence/         # persistence adapter, JPA entities, mappers, Spring Data repositories
+    └── out/<target-context>/    # DomainAdapter calling another bounded context of the same component (rule 8)
 ```
 
 Application-wide configuration lives in a `configuration` package directly under the base package, next to the
@@ -45,7 +47,7 @@ components and the `@SpringBootApplication` class:
 <base>/
 ├── Application.java            # @SpringBootApplication
 ├── configuration/              # general Spring Java config (@Configuration classes)
-└── <component>/                # see above
+└── <component>/<context>/      # see above
 ```
 
 - `configuration` holds general `@Configuration` classes only (for example a `Clock` bean, security, web or
@@ -74,7 +76,13 @@ components and the `@SpringBootApplication` class:
    and record any shortcut consciously, for example in an `ARCHITECTURE.md` or an ADR.
 7. **Adapters never depend on each other.** Spring Data repositories and JPA entities stay package-private
    inside the persistence adapter package where possible.
-8. **Naming**: `*UseCase`, `*Port`, `*Service`, `*Controller`, `*PersistenceAdapter`, `SpringData*Repository`.
+8. **Joining two bounded contexts of the same component.** The source context defines an outgoing port
+   (`application/port/out`, in its own language and types). It is implemented by a `<Target>DomainAdapter` in
+   `adapter/out/<target-context>/`, which calls the target context's **incoming port** (`*UseCase`) directly and
+   converts the source's types to the target's command. Nothing else of the target context may be used: not its
+   domain, services, outgoing ports or adapters. The source's application layer only ever sees its own port.
+   Joining contexts of *different* components is not defined by this skill: ask the user.
+9. **Naming**: `*UseCase`, `*Port`, `*Service`, `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`, `SpringData*Repository`.
 
 ## 4. Java 25 guidelines
 
@@ -124,8 +132,9 @@ Mirror the book's testing split:
 
 - Add a new use case: new `*UseCase` + command in `port/in`, service in `application/service`,
   any new `*Port` in `port/out`, then adapter changes. Never skip the port.
-- Add a new component: new top-level package with the same internal layout. Communicate between components
-  through ports, not by importing another component's domain or adapters.
+- Add a new bounded context: new `<component>/<context>/` package with the same internal layout.
+- Connect two bounded contexts of the same component: follow rule 8 (outgoing port + `*DomainAdapter`).
+  Never import the target context's domain, services or adapters.
 - To check conformance afterwards, delegate to the `hexagonal-reviewer` agent.
 
 ## Source
