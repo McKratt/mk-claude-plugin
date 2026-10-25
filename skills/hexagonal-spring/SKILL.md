@@ -45,7 +45,8 @@ The `config` package is a convention of this skill, not a rule of the book.
 
 1. **Dependencies point inward.** `adapter` → `application` (ports and services) → `application/domain`.
    The domain package sits inside `application` but depends on nothing else, not even on ports or services:
-   no Spring, no JPA, no Jackson annotations.
+   no Spring, no JPA, no Jackson and no JSON annotations or types of any kind.
+   **Lombok is allowed in the domain** (and only compile-time annotations like it), because it adds no runtime dependency on a framework.
 2. **One narrow incoming port per use case**, named `<Verb><Noun>UseCase`
    (for example `PlaceOrderUseCase`). Avoid "broad" service interfaces.
 3. **Outgoing ports** are named `<Action><Noun>Port` (for example `SaveOrderPort`, `LoadOrderPort`)
@@ -64,6 +65,7 @@ The `config` package is a convention of this skill, not a rule of the book.
 ## 4. Java 25 guidelines
 
 - Records for commands, web models, value objects and IDs.
+- Lombok may be used in `application/domain` (for example on entities). Declare it as compile-only with the annotation processor configured.
 - Sealed interfaces and pattern-matching `switch` for closed domain variants (for example result types).
 - `var` for obvious local types only; keep signatures explicit.
 - Do not enable preview features unless the user asks.

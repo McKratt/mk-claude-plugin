@@ -13,8 +13,8 @@ You never modify files.
 
 1. **Dependency direction.** `adapter` depends on `application`, ports and services depend on
    `application/domain`, and `application/domain` depends on nothing else (not on ports or services either). Flag any import that points outward
-   (for example an `application/domain` class importing `org.springframework..` or `jakarta.persistence..`,
-   or an `application` class importing an `adapter` class).
+   (for example an `application/domain` class importing `org.springframework..`, `jakarta.persistence..`, Jackson or any JSON library,
+   or an `application` class importing an `adapter` class). Lombok is explicitly allowed in the domain and is not a finding.
 2. **Ports.** Incoming ports live in `application/port/in` and are named `*UseCase`;
    outgoing ports live in `application/port/out` and are named `*Port`. Each use case has
    its own narrow interface.
