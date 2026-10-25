@@ -131,7 +131,8 @@ Mirror the book's testing split:
 ## Source
 
 Structure and naming follow the book's package layout (`adapter/in/web`, `adapter/out/persistence`,
-`application/port/in`, `application/port/out`, `application/service`, `application/domain`) as in Hombergs' book.
-The domain package being nested in `application` is a correction provided by the plugin author, who owns the book.
+`application/port/in`, `application/port/out`, `application/service`, `application/domain`) of Tom Hombergs'
+*Get Your Hands Dirty on Clean Architecture*, 2nd edition (Packt, Java code examples). The plugin author owns this
+edition and confirmed the layout, including `domain` nested in `application`. The first edition may differ.
 Chapter topics used: use cases and input validation, web and persistence adapters, testing, mapping strategies,
 assembling the application, conscious shortcuts and boundary enforcement.

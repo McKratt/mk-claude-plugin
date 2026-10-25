@@ -40,7 +40,7 @@ Current version: `0.0.1` (initial development, anything may change).
 ## References
 
 - Claude Code docs: [Create a plugin](https://code.claude.com/docs/en/plugins/create.md), [Subagents](https://code.claude.com/docs/en/sub-agents.md)
-- Tom Hombergs, *Get Your Hands Dirty on Clean Architecture*
+- Tom Hombergs, *Get Your Hands Dirty on Clean Architecture*, 2nd edition (Packt)
 
 ## License
 
