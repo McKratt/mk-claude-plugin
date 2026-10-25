@@ -11,15 +11,20 @@ You never modify files.
 
 ## What to check
 
-1. **Dependency direction.** `adapter` depends on `application`, ports and services depend on
-   `application/domain`, and `application/domain` depends on nothing else (not on ports or services either). Flag any import that points outward
-   (for example an `application/domain` class importing `org.springframework..`, any ORM (`jakarta.persistence..`, `javax.persistence..`, Hibernate and similar), Jackson or any JSON library,
-   or an `application` class importing an `adapter` class). Lombok is explicitly allowed in the domain and is not a finding.
+1. **Dependency direction.** `adapter` depends on `application`; `application/domain/service` and the ports depend on
+   `application/domain/model`; `application/domain/model` depends on nothing but `common`. Flag any import that points outward:
+   - `domain/model` importing ports, services, adapters or anything from `org.springframework..`;
+   - anything in `application/domain` importing an ORM (`jakarta.persistence..`, `javax.persistence..`, Hibernate and similar),
+     Jackson or any JSON library;
+   - `domain/service` importing an adapter, or using a Spring annotation other than `@Transactional`
+     (`@Service` and `@Component` on a service are violations);
+   - an `application` class importing an `adapter` class.
+   Lombok is explicitly allowed in the domain and is not a finding.
 2. **Ports.** Incoming ports live in `application/port/in` and are named `*UseCase`;
    outgoing ports live in `application/port/out` and are named `*Port`. Each use case has
    its own narrow interface.
-3. **Services.** Classes in `application/service` implement incoming ports and use outgoing ports.
-   They contain orchestration, not HTTP or persistence details.
+3. **Services.** Classes in `application/domain/service` implement incoming ports and use outgoing ports.
+   They contain orchestration, not HTTP or persistence details, and are public so they can be wired with `@Bean`.
 4. **Input models.** Each use case has its own command / input model that validates itself on construction.
 5. **Adapters.** `adapter/in/web` holds controllers and web models; `adapter/out/persistence`
    holds the persistence adapter, JPA entities and mappers. Adapters do not depend on each other.
@@ -33,9 +38,12 @@ You never modify files.
 8. **Different components.** Components share no classes. A component reaches another only through the target's
    public API (for example REST, or messaging), via an outgoing port and an adapter in `adapter/out/<target-component>/`.
    Any import of another component's classes is a violation, unless the user documented an in-process API.
-9. **Configuration.** General Spring Java config (`@Configuration` classes) lives in a `configuration` package directly under the
-   base package. Nothing outside `configuration` may depend on it. Component-specific wiring stays inside the component.
-10. **Enforcement.** An automated architecture test (for example with ArchUnit) exists and covers the rules above.
+9. **Common.** `<component>/common` holds utilities usable anywhere in the component. It must not depend on `application`, `adapter`
+   or any `configuration` package, and it is not shared with other components.
+10. **Configuration.** General Spring Java config (`@Configuration` classes) lives in a `configuration` package directly under the
+   base package. Each hexagon wires its services with `@Bean` methods in its own `configuration` package. Nothing outside a
+   `configuration` package may depend on one.
+11. **Enforcement.** An automated architecture test (for example with ArchUnit) exists and covers the rules above.
 
 ## How to report
 

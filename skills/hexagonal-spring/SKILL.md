@@ -24,22 +24,32 @@ Ask only for what is missing, in one short message:
 ## 2. Package structure
 
 One top-level package per component. A component holds one or more **bounded contexts**, and each bounded context
-is its own hexagon. When the component has **several** contexts, each gets its own package
-(`<base>/<component>/<context>/`). When it has **a single** context, the context level is omitted from the package
-name (`<base>/<component>/`). The layout of a hexagon is:
+is its own hexagon. When the component has **several** contexts, each gets its own package; when it has **a single**
+context, the context level is omitted from the package name. A `common` package holds utilities usable anywhere
+in the component:
 
 ```
-<base>/<component>/[<context>/]
+<base>/<component>/
+├── common/                      # utilities usable anywhere in the component (shared by its contexts)
+└── [<context>/]                 # one hexagon per bounded context (level omitted for a single context)
+```
+
+Layout of a hexagon (`<hexagon>` = `<base>/<component>/[<context>/]`):
+
+```
+<hexagon>/
 ├── application/
-│   ├── domain/                  # entities, value objects, domain rules
-│   ├── port/
-│   │   ├── in/                  # incoming ports: *UseCase + one command per use case
-│   │   └── out/                 # outgoing ports: *Port
-│   └── service/                 # implements incoming ports, uses outgoing ports
-└── adapter/
-    ├── in/web/                  # controllers, web models
-    ├── out/persistence/         # persistence adapter, JPA entities, mappers, Spring Data repositories
-    └── out/<target-context>/    # DomainAdapter calling another bounded context of the same component (rule 8)
+│   ├── domain/
+│   │   ├── model/               # entities, value objects, domain rules (framework-free)
+│   │   └── service/             # *Service: implements incoming ports, uses outgoing ports
+│   └── port/
+│       ├── in/                  # incoming ports: *UseCase + one command per use case
+│       └── out/                 # outgoing ports: *Port
+├── adapter/
+│   ├── in/web/                  # controllers, web models
+│   ├── out/persistence/         # persistence adapter, JPA entities, mappers, Spring Data repositories
+│   └── out/<target-context>/    # DomainAdapter calling another bounded context of the same component (rule 8)
+└── configuration/               # @Configuration with @Bean methods wiring this hexagon's services (rule 11)
 ```
 
 Application-wide configuration lives in a `configuration` package directly under the base package, next to the
@@ -56,23 +66,27 @@ components and the `@SpringBootApplication` class:
   Jackson settings).
 - Configuration classes may depend on anything, since they assemble the application. **Nothing depends on
   `configuration`**: components never import it.
-- Component-specific wiring stays inside the component. The `configuration` package
-  is a convention of this skill, not a rule of the book.
+- The services of a hexagon are wired in that hexagon's own `configuration` package (rule 11), not here.
+  Both `configuration` packages are conventions of this skill, not rules of the book.
 
 ## 3. Rules
 
-1. **Dependencies point inward.** `adapter` → `application` (ports and services) → `application/domain`.
-   The domain package sits inside `application` but depends on nothing else, not even on ports or services:
-   no Spring, no ORM (JPA/Jakarta Persistence, Hibernate and similar) and no Jackson or JSON annotations or types of any kind.
-   **Lombok is allowed in the domain** (and only compile-time annotations like it), because it adds no runtime dependency on a framework.
+1. **Dependencies point inward.** `adapter` → `application` (ports and `domain/service`) → `domain/model`.
+   - `domain/model` depends on nothing but `common`: no ports, services or adapters, no Spring, no ORM
+     (JPA/Jakarta Persistence, Hibernate and similar), no Jackson or JSON annotations or types of any kind.
+   - `domain/service` may use `domain/model`, the ports and `common`, never the adapters. It is also free of
+     ORM and JSON, and of Spring annotations: **no `@Service` or `@Component`**. The single exception is
+     `@Transactional`, an accepted exception to the purity of the domain.
+   - **Lombok is allowed in the whole domain** (compile-time only, no runtime framework dependency).
 2. **One narrow incoming port per use case**, named `<Verb><Noun>UseCase`
    (for example `PlaceOrderUseCase`). Avoid "broad" service interfaces.
 3. **Outgoing ports** are named `<Action><Noun>Port` (for example `SaveOrderPort`, `LoadOrderPort`)
    and are defined by the application, implemented by adapters.
 4. **Each use case has its own input model** (a command). It validates itself in its constructor.
    Use a Java `record` with a compact constructor. Business rules belong in the domain model, not in the command.
-5. **Services** in `application/service` implement the incoming port, orchestrate domain objects and outgoing ports,
-   and own the transaction boundary.
+5. **Services** in `application/domain/service` implement the incoming port, orchestrate domain objects and
+   outgoing ports, and own the transaction boundary (`@Transactional`). They carry no stereotype annotation and are
+   created by `@Bean` methods (rule 11), so they are `public` with a public constructor.
 6. **Adapters own their models.** Web request/response records and JPA entities are separate from domain classes,
    with explicit mappers. Choose the mapping strategy per boundary (no mapping, two-way, full, one-way)
    and record any shortcut consciously, for example in an `ARCHITECTURE.md` or an ADR.
@@ -88,12 +102,18 @@ components and the `@SpringBootApplication` class:
    `application/port/out`, implemented by an adapter in `adapter/out/<target-component>/` (for example
    `<Target>RestAdapter`) that calls the target's public API and maps the response to the source's own model.
    There is **no compile-time dependency** between the two components. If the API technology is not stated, ask the user.
-10. **Naming**: `*UseCase`, `*Port`, `*Service`, `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`, `<Target>RestAdapter` (or the technology used), `SpringData*Repository`.
+10. **`common`** holds utilities usable anywhere in the component (all its contexts and layers). It depends on
+    neither `application` nor `adapter`. It is not shared between different components (rule 9).
+11. **Wiring of a hexagon.** A `@Configuration` class in `<hexagon>/configuration/` declares one `@Bean` per service
+    (for example `placeOrderUseCase(SaveOrderPort port)` returning `new PlaceOrderService(port)`). Adapters keep
+    their `@Component` / `@RestController` annotations and are found by component scanning. Nothing in
+    `application` or `adapter` depends on `configuration`.
+12. **Naming**: `*UseCase`, `*Port`, `*Service`, `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`, `<Target>RestAdapter` (or the technology used), `SpringData*Repository`.
 
 ## 4. Java 25 guidelines
 
 - Records for commands, web models, value objects and IDs.
-- Lombok may be used in `application/domain` (for example on entities). Declare it as compile-only with the annotation processor configured.
+- Lombok may be used in `application/domain` (for example on entities in `model`). Declare it as compile-only with the annotation processor configured.
 - Sealed interfaces and pattern-matching `switch` for closed domain variants (for example result types).
 - `var` for obvious local types only; keep signatures explicit.
 - Do not enable preview features unless the user asks.
@@ -115,9 +135,9 @@ Mirror the book's testing split:
 
 ## 6. Assembly and boundaries
 
-- Default to Spring classpath scanning (`@Service`, `@RestController`, `@Component` on adapters).
-  Use explicit `@Configuration` with `@Bean` methods, kept inside the component, when you want the application layer free of Spring annotations.
-- `@Transactional` and `@Service` on services are accepted pragmatic shortcuts. Note them in the architecture notes.
+- Adapters are found by Spring classpath scanning (`@RestController`, `@Component`).
+- Services are **not** annotated: wire them with `@Bean` methods in `<hexagon>/configuration/` (rule 11).
+  `@Transactional` on services is the only Spring annotation allowed in the domain; document it in the architecture notes.
 - **Multi-module option**: separate Maven/Gradle modules (`application` including its `domain` package, `adapter-web`,
   `adapter-persistence`, `bootstrap`) make illegal dependencies impossible to compile. Offer it for larger projects;
   single module plus ArchUnit is the default.
@@ -136,7 +156,7 @@ Mirror the book's testing split:
 
 ## 8. When adding to an existing project
 
-- Add a new use case: new `*UseCase` + command in `port/in`, service in `application/service`,
+- Add a new use case: new `*UseCase` + command in `port/in`, service in `application/domain/service` (plus its `@Bean` in `configuration`),
   any new `*Port` in `port/out`, then adapter changes. Never skip the port.
 - Add a new bounded context: new `<component>/<context>/` package with the same internal layout. If the component had a
   single context until now, move its packages from `<component>/` into `<component>/<context>/`.
@@ -148,8 +168,9 @@ Mirror the book's testing split:
 ## Source
 
 Structure and naming follow the book's package layout (`adapter/in/web`, `adapter/out/persistence`,
-`application/port/in`, `application/port/out`, `application/service`, `application/domain`) of Tom Hombergs'
+`application/port/in`, `application/port/out`, `application/domain/model`, `application/domain/service`, `common`) of Tom Hombergs'
 *Get Your Hands Dirty on Clean Architecture*, 2nd edition (Packt, Java code examples). The plugin author owns this
-edition and confirmed the layout, including `domain` nested in `application`. The first edition may differ.
+edition and confirmed the layout with a photo of the package tree on page 28 (chapter "Organizing Code"):
+`domain` nested in `application`, `model` and `service` inside `domain`, and a `common` package. The first edition may differ.
 Chapter topics used: use cases and input validation, web and persistence adapters, testing, mapping strategies,
 assembling the application, conscious shortcuts and boundary enforcement.

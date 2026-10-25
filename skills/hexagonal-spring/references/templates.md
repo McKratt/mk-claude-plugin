@@ -3,13 +3,14 @@
 Example slice: place an order. Base package `com.example.shop`, component `sales`, bounded context `order`.
 Replace names to fit the user's domain. All code targets Java 25 and Spring Boot.
 The slice below lives in a component with several bounded contexts (`sales/order`, `sales/billing`).
-For a component with a single context, omit the context level: `com.example.shop.sales.application.domain`,
-`com.example.shop.sales.adapter.in.web`, and so on.
+For a component with a single context, omit the context level: `com.example.shop.sales.application.domain.model`,
+`com.example.shop.sales.adapter.in.web`, and so on. Utilities usable anywhere in the component go in
+`com.example.shop.sales.common`.
 
-## Domain (`sales/order/application/domain`)
+## Domain (`sales/order/application/domain/model`)
 
 ```java
-package com.example.shop.sales.order.application.domain;
+package com.example.shop.sales.order.application.domain.model;
 
 import java.util.UUID;
 
@@ -25,7 +26,7 @@ public record OrderId(UUID value) {
 ```
 
 ```java
-package com.example.shop.sales.order.application.domain;
+package com.example.shop.sales.order.application.domain.model;
 
 import java.util.List;
 import java.util.Objects;
@@ -66,7 +67,7 @@ public final class Order {
 ```java
 package com.example.shop.sales.order.application.port.in;
 
-import com.example.shop.sales.order.application.domain.OrderId;
+import com.example.shop.sales.order.application.domain.model.OrderId;
 
 public interface PlaceOrderUseCase {
     OrderId placeOrder(PlaceOrderCommand command);
@@ -106,35 +107,33 @@ public record PlaceOrderCommand(List<Line> lines) {
 ```java
 package com.example.shop.sales.order.application.port.out;
 
-import com.example.shop.sales.order.application.domain.Order;
+import com.example.shop.sales.order.application.domain.model.Order;
 
 public interface SaveOrderPort {
     void save(Order order);
 }
 ```
 
-## Service (`sales/order/application/service`)
+## Service (`sales/order/application/domain/service`)
 
 ```java
-package com.example.shop.sales.order.application.service;
+package com.example.shop.sales.order.application.domain.service;
 
 import com.example.shop.sales.order.application.port.in.PlaceOrderCommand;
 import com.example.shop.sales.order.application.port.in.PlaceOrderUseCase;
 import com.example.shop.sales.order.application.port.out.SaveOrderPort;
-import com.example.shop.sales.order.application.domain.Order;
-import com.example.shop.sales.order.application.domain.OrderId;
-import org.springframework.stereotype.Service;
+import com.example.shop.sales.order.application.domain.model.Order;
+import com.example.shop.sales.order.application.domain.model.OrderId;
 import org.springframework.transaction.annotation.Transactional;
 
-// @Service and @Transactional are a conscious shortcut: the application layer
-// depends on Spring annotations. Document it, or wire the bean in a @Configuration class instead.
-@Service
+// No @Service: the bean is declared in OrderConfiguration. @Transactional is the one accepted
+// exception to the purity of the domain.
 @Transactional
-class PlaceOrderService implements PlaceOrderUseCase {
+public class PlaceOrderService implements PlaceOrderUseCase {
 
     private final SaveOrderPort saveOrderPort;
 
-    PlaceOrderService(SaveOrderPort saveOrderPort) {
+    public PlaceOrderService(SaveOrderPort saveOrderPort) {
         this.saveOrderPort = saveOrderPort;
     }
 
@@ -146,6 +145,29 @@ class PlaceOrderService implements PlaceOrderUseCase {
         var order = Order.place(lines);
         saveOrderPort.save(order);
         return order.id();
+    }
+}
+```
+
+## Wiring of the hexagon (`sales/order/configuration`)
+
+Services carry no stereotype annotation, so each one is declared with a `@Bean` method.
+
+```java
+package com.example.shop.sales.order.configuration;
+
+import com.example.shop.sales.order.application.domain.service.PlaceOrderService;
+import com.example.shop.sales.order.application.port.in.PlaceOrderUseCase;
+import com.example.shop.sales.order.application.port.out.SaveOrderPort;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+class OrderConfiguration {
+
+    @Bean
+    PlaceOrderUseCase placeOrderUseCase(SaveOrderPort saveOrderPort) {
+        return new PlaceOrderService(saveOrderPort);
     }
 }
 ```
@@ -253,7 +275,7 @@ interface SpringDataOrderRepository extends JpaRepository<OrderJpaEntity, UUID> 
 package com.example.shop.sales.order.adapter.out.persistence;
 
 import com.example.shop.sales.order.application.port.out.SaveOrderPort;
-import com.example.shop.sales.order.application.domain.Order;
+import com.example.shop.sales.order.application.domain.model.Order;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -318,7 +340,7 @@ Source context `order`: outgoing port, written in `order`'s own language (`sales
 ```java
 package com.example.shop.sales.order.application.port.out;
 
-import com.example.shop.sales.order.application.domain.Order;
+import com.example.shop.sales.order.application.domain.model.Order;
 
 public interface CreateInvoicePort {
     void createInvoiceFor(Order order);
@@ -333,7 +355,7 @@ package com.example.shop.sales.order.adapter.out.billing;
 
 import com.example.shop.sales.billing.application.port.in.CreateInvoiceCommand;
 import com.example.shop.sales.billing.application.port.in.CreateInvoiceUseCase;
-import com.example.shop.sales.order.application.domain.Order;
+import com.example.shop.sales.order.application.domain.model.Order;
 import com.example.shop.sales.order.application.port.out.CreateInvoicePort;
 import org.springframework.stereotype.Component;
 
@@ -365,7 +387,7 @@ here REST, and reaches it through an outgoing port and an adapter. The API could
 ```java
 package com.example.shop.sales.order.application.port.out;
 
-import com.example.shop.sales.order.application.domain.Order;
+import com.example.shop.sales.order.application.domain.model.Order;
 
 public interface RequestShipmentPort {
     void requestShipmentFor(Order order);
@@ -375,7 +397,7 @@ public interface RequestShipmentPort {
 ```java
 package com.example.shop.sales.order.adapter.out.shipping;
 
-import com.example.shop.sales.order.application.domain.Order;
+import com.example.shop.sales.order.application.domain.model.Order;
 import com.example.shop.sales.order.application.port.out.RequestShipmentPort;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
@@ -416,6 +438,7 @@ Add `com.tngtech.archunit:archunit-junit5` with test scope, using the latest rel
 package com.example.shop;
 
 import static com.tngtech.archunit.base.DescribedPredicate.not;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.equivalentTo;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
@@ -424,20 +447,46 @@ import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
+import org.springframework.transaction.annotation.Transactional;
 
 @AnalyzeClasses(packages = "com.example.shop", importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
 
+    private static final String[] ORM_AND_JSON = {
+            "jakarta.persistence..", "javax.persistence..", "org.hibernate..",
+            "org.eclipse.persistence..", "org.mybatis..",
+            "com.fasterxml.jackson..", "tools.jackson..", "jakarta.json..", "com.google.gson..", "org.json.."};
+
+    // Lombok (lombok..) is deliberately not forbidden anywhere in the domain.
     @ArchTest
-    static final ArchRule domainDependsOnNothingOutward = noClasses()
+    static final ArchRule domainHasNoOrmOrJson = noClasses()
             .that().resideInAPackage("..application.domain..")
+            .should().dependOnClassesThat().resideInAnyPackage(ORM_AND_JSON);
+
+    @ArchTest
+    static final ArchRule modelIsFrameworkFreeAndSelfContained = noClasses()
+            .that().resideInAPackage("..application.domain.model..")
             .should().dependOnClassesThat().resideInAnyPackage(
-                    "..application.port..", "..application.service..", "..adapter..",
-                    "org.springframework..",
-                    "jakarta.persistence..", "javax.persistence..", "org.hibernate..",
-                    "org.eclipse.persistence..", "org.mybatis..",
-                    "com.fasterxml.jackson..", "tools.jackson..", "jakarta.json..", "com.google.gson..", "org.json..");
-    // Lombok (lombok..) is deliberately not forbidden in the domain.
+                    "..application.domain.service..", "..application.port..", "..adapter..",
+                    "org.springframework..");
+
+    @ArchTest
+    static final ArchRule servicesDoNotUseAdapters = noClasses()
+            .that().resideInAPackage("..application.domain.service..")
+            .should().dependOnClassesThat().resideInAPackage("..adapter..");
+
+    // @Service and @Component are forbidden on services; @Transactional is the only Spring type allowed.
+    @ArchTest
+    static final ArchRule servicesUseSpringOnlyForTransactional = noClasses()
+            .that().resideInAPackage("..application.domain.service..")
+            .should().dependOnClassesThat(
+                    resideInAPackage("org.springframework..").and(not(equivalentTo(Transactional.class))));
+
+    @ArchTest
+    static final ArchRule commonIsIndependent = noClasses()
+            .that().resideInAPackage("..common..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "..application..", "..adapter..", "com.example.shop..configuration..");
 
     @ArchTest
     static final ArchRule applicationDoesNotDependOnAdapters = noClasses()
@@ -456,8 +505,8 @@ class ArchitectureTest {
 
     @ArchTest
     static final ArchRule nothingDependsOnConfiguration = noClasses()
-            .that().resideOutsideOfPackage("com.example.shop.configuration..")
-            .should().dependOnClassesThat().resideInAPackage("com.example.shop.configuration..");
+            .that().resideOutsideOfPackage("com.example.shop..configuration..")
+            .should().dependOnClassesThat().resideInAPackage("com.example.shop..configuration..");
 
     // One pair of rules per source -> target bounded context, for example order -> billing.
     @ArchTest
@@ -507,7 +556,7 @@ Place other general `@Configuration` classes here (web, security, serialization)
 Service test with a mocked outgoing port:
 
 ```java
-package com.example.shop.sales.order.application.service;
+package com.example.shop.sales.order.application.domain.service;
 
 import static org.mockito.Mockito.*;
 
