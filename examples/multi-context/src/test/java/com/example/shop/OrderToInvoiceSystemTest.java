@@ -1,0 +1,63 @@
+package com.example.shop;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.regex.Pattern;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.test.context.SpringBootTest;
+
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+class OrderToInvoiceSystemTest {
+
+    private static final Pattern ID = Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-fA-F-]{36})\"");
+
+    @Value("${local.server.port}")
+    int port;
+    private final HttpClient http = HttpClient.newHttpClient();
+
+    private HttpResponse<String> post(String path, String json) throws Exception {
+        var request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(json))
+                .build();
+        return http.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> get(String path) throws Exception {
+        var request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).GET().build();
+        return http.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+    @Test
+    void placingAnOrderCreatesAnInvoiceInTheBillingContext() throws Exception {
+        var created = post("/orders",
+                "{\"lines\":[{\"sku\":\"SKU-1\",\"quantity\":2},{\"sku\":\"SKU-2\",\"quantity\":1}]}");
+        assertEquals(201, created.statusCode());
+        var matcher = ID.matcher(created.body());
+        assertTrue(matcher.find(), "no order id in: " + created.body());
+        var orderId = matcher.group(1);
+
+        var invoice = get("/invoices/by-order/" + orderId);
+
+        assertEquals(200, invoice.statusCode());
+        assertTrue(invoice.body().contains("\"itemCount\":3"), invoice.body());
+        assertTrue(invoice.body().contains(orderId), invoice.body());
+    }
+
+    @Test
+    void answers404WhenThereIsNoInvoice() throws Exception {
+        var response = get("/invoices/by-order/00000000-0000-0000-0000-000000000000");
+
+        assertEquals(404, response.statusCode());
+    }
+
+    @Test
+    void rejectsAnOrderWithoutLines() throws Exception {
+        assertEquals(400, post("/orders", "{\"lines\":[]}").statusCode());
+    }
+}
