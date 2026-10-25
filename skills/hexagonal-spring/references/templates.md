@@ -285,6 +285,8 @@ Add `com.tngtech.archunit:archunit-junit5` with test scope, using the latest rel
 ```java
 package com.example.shop;
 
+import static com.tngtech.archunit.base.DescribedPredicate.not;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import com.tngtech.archunit.core.importer.ImportOption;
@@ -320,8 +322,36 @@ class ArchitectureTest {
     static final ArchRule outboundAdaptersDoNotUseInboundAdapters = noClasses()
             .that().resideInAPackage("..adapter.out..")
             .should().dependOnClassesThat().resideInAPackage("..adapter.in..");
+
+    // One rule per ordered pair of bounded contexts: "billing" may only use "order" through its api package.
+    @ArchTest
+    static final ArchRule billingUsesOrderOnlyThroughItsApi = noClasses()
+            .that().resideInAPackage("com.example.shop.billing..")
+            .should().dependOnClassesThat(
+                    resideInAPackage("com.example.shop.order..")
+                            .and(not(resideInAPackage("com.example.shop.order.api.."))));
 }
 ```
+
+## Cross-context example (`order/api`)
+
+The api exposes plain types only, never domain classes:
+
+```java
+package com.example.shop.order.api;
+
+import java.util.UUID;
+
+public interface OrderApi {
+    OrderSummary findOrder(UUID orderId);
+
+    record OrderSummary(UUID id, int lineCount) {}
+}
+```
+
+The `order` component implements it in `order/adapter/in/api` by calling its own incoming ports.
+A consumer such as `billing` declares an outgoing port (for example `LoadOrderPort`) and implements it in
+`billing/adapter/out/order`, which calls `OrderApi` and maps `OrderSummary` to billing's own model.
 
 ## Test examples
 
