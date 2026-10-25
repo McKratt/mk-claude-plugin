@@ -3,10 +3,10 @@
 Example slice: place an order. Base package `com.example.shop`, component `order`.
 Replace names to fit the user's domain. All code targets Java 25 and Spring Boot.
 
-## Domain (`order/domain`)
+## Domain (`order/application/domain`)
 
 ```java
-package com.example.shop.order.domain;
+package com.example.shop.order.application.domain;
 
 import java.util.UUID;
 
@@ -22,7 +22,7 @@ public record OrderId(UUID value) {
 ```
 
 ```java
-package com.example.shop.order.domain;
+package com.example.shop.order.application.domain;
 
 import java.util.List;
 import java.util.Objects;
@@ -63,7 +63,7 @@ public final class Order {
 ```java
 package com.example.shop.order.application.port.in;
 
-import com.example.shop.order.domain.OrderId;
+import com.example.shop.order.application.domain.OrderId;
 
 public interface PlaceOrderUseCase {
     OrderId placeOrder(PlaceOrderCommand command);
@@ -103,7 +103,7 @@ public record PlaceOrderCommand(List<Line> lines) {
 ```java
 package com.example.shop.order.application.port.out;
 
-import com.example.shop.order.domain.Order;
+import com.example.shop.order.application.domain.Order;
 
 public interface SaveOrderPort {
     void save(Order order);
@@ -118,8 +118,8 @@ package com.example.shop.order.application.service;
 import com.example.shop.order.application.port.in.PlaceOrderCommand;
 import com.example.shop.order.application.port.in.PlaceOrderUseCase;
 import com.example.shop.order.application.port.out.SaveOrderPort;
-import com.example.shop.order.domain.Order;
-import com.example.shop.order.domain.OrderId;
+import com.example.shop.order.application.domain.Order;
+import com.example.shop.order.application.domain.OrderId;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -250,7 +250,7 @@ interface SpringDataOrderRepository extends JpaRepository<OrderJpaEntity, UUID> 
 package com.example.shop.order.adapter.out.persistence;
 
 import com.example.shop.order.application.port.out.SaveOrderPort;
-import com.example.shop.order.domain.Order;
+import com.example.shop.order.application.domain.Order;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -297,9 +297,9 @@ class ArchitectureTest {
 
     @ArchTest
     static final ArchRule domainDependsOnNothingOutward = noClasses()
-            .that().resideInAPackage("..domain..")
+            .that().resideInAPackage("..application.domain..")
             .should().dependOnClassesThat().resideInAnyPackage(
-                    "..application..", "..adapter..",
+                    "..application.port..", "..application.service..", "..adapter..",
                     "org.springframework..", "jakarta.persistence..", "com.fasterxml.jackson..");
 
     @ArchTest

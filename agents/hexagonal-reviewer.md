@@ -11,9 +11,9 @@ You never modify files.
 
 ## What to check
 
-1. **Dependency direction.** `adapter` depends on `application`, `application` depends on
-   `domain`, `domain` depends on nothing else. Flag any import that points outward
-   (for example a `domain` class importing `org.springframework..` or `jakarta.persistence..`,
+1. **Dependency direction.** `adapter` depends on `application`, ports and services depend on
+   `application/domain`, and `application/domain` depends on nothing else (not on ports or services either). Flag any import that points outward
+   (for example an `application/domain` class importing `org.springframework..` or `jakarta.persistence..`,
    or an `application` class importing an `adapter` class).
 2. **Ports.** Incoming ports live in `application/port/in` and are named `*UseCase`;
    outgoing ports live in `application/port/out` and are named `*Port`. Each use case has

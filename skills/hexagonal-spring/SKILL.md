@@ -27,8 +27,8 @@ One top-level package per component, with this layout inside:
 
 ```
 <base>/<component>/
-├── domain/                      # entities, value objects, domain rules
 ├── application/
+│   ├── domain/                  # entities, value objects, domain rules
 │   ├── port/
 │   │   ├── in/                  # incoming ports: *UseCase + one command per use case
 │   │   └── out/                 # outgoing ports: *Port
@@ -43,7 +43,8 @@ The `config` package is a convention of this skill, not a rule of the book.
 
 ## 3. Rules
 
-1. **Dependencies point inward.** `adapter` → `application` → `domain`. The domain depends on nothing:
+1. **Dependencies point inward.** `adapter` → `application` (ports and services) → `application/domain`.
+   The domain package sits inside `application` but depends on nothing else, not even on ports or services:
    no Spring, no JPA, no Jackson annotations.
 2. **One narrow incoming port per use case**, named `<Verb><Noun>UseCase`
    (for example `PlaceOrderUseCase`). Avoid "broad" service interfaces.
@@ -87,7 +88,7 @@ Mirror the book's testing split:
 - Default to Spring classpath scanning (`@Service`, `@RestController`, `@Component` on adapters).
   Use explicit `@Configuration` with `@Bean` methods when you want the application layer free of Spring annotations.
 - `@Transactional` and `@Service` on services are accepted pragmatic shortcuts. Note them in the architecture notes.
-- **Multi-module option**: separate Maven/Gradle modules (`domain`, `application`, `adapter-web`,
+- **Multi-module option**: separate Maven/Gradle modules (`application` including its `domain` package, `adapter-web`,
   `adapter-persistence`, `bootstrap`) make illegal dependencies impossible to compile. Offer it for larger projects;
   single module plus ArchUnit is the default.
 
@@ -114,6 +115,7 @@ Mirror the book's testing split:
 ## Source
 
 Structure and naming follow the book's package layout (`adapter/in/web`, `adapter/out/persistence`,
-`application/port/in`, `application/port/out`, `application/service`, `domain`) as shown in Hombergs' examples.
+`application/port/in`, `application/port/out`, `application/service`, `application/domain`) as in Hombergs' book.
+The domain package being nested in `application` is a correction provided by the plugin author, who owns the book.
 Chapter topics used: use cases and input validation, web and persistence adapters, testing, mapping strategies,
 assembling the application, conscious shortcuts and boundary enforcement.
