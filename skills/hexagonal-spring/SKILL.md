@@ -23,11 +23,10 @@ Ask only for what is missing, in one short message:
 
 ## 2. Package structure
 
-One top-level package per component (bounded context), with this layout inside. Each component is its own hexagon:
+One top-level package per component, with this layout inside:
 
 ```
 <base>/<component>/
-├── api/                         # the component's public contract: interfaces and plain published types
 ├── application/
 │   ├── domain/                  # entities, value objects, domain rules
 │   ├── port/
@@ -36,9 +35,7 @@ One top-level package per component (bounded context), with this layout inside. 
 │   └── service/                 # implements incoming ports, uses outgoing ports
 └── adapter/
     ├── in/web/                  # controllers, web models
-    ├── in/api/                  # implements the api/ interfaces by calling incoming ports
-    ├── out/persistence/         # persistence adapter, JPA entities, mappers, Spring Data repositories
-    └── out/<other-component>/   # calls another component's api/, mapped to this component's own model
+    └── out/persistence/         # persistence adapter, JPA entities, mappers, Spring Data repositories
 ```
 
 Application-wide wiring (`@SpringBootApplication` class, shared configuration) stays in the base package or a `config` package.
@@ -63,15 +60,7 @@ The `config` package is a convention of this skill, not a rule of the book.
    and record any shortcut consciously, for example in an `ARCHITECTURE.md` or an ADR.
 7. **Adapters never depend on each other.** Spring Data repositories and JPA entities stay package-private
    inside the persistence adapter package where possible.
-8. **Several bounded contexts = several separate hexagons.** A component never imports another component's
-   `application`, `adapter` or domain classes. Components talk to each other only through the target component's
-   `api` package at its root. The `api` package contains interfaces and plain types (records, enums) that are
-   not domain classes.
-9. **Calling another component**: define an outgoing port in the caller's `application/port/out`, implemented by an
-   adapter in `adapter/out/<other-component>` that calls the other component's `api` and maps the result to the
-   caller's own model. The placement of the api implementation (`adapter/in/api`) and of the calling adapter
-   is a convention of this skill; confirm it with the user if the project already has a different one.
-10. **Naming**: `*UseCase`, `*Port`, `*Service`, `*Controller`, `*PersistenceAdapter`, `SpringData*Repository`.
+8. **Naming**: `*UseCase`, `*Port`, `*Service`, `*Controller`, `*PersistenceAdapter`, `SpringData*Repository`.
 
 ## 4. Java 25 guidelines
 
@@ -121,8 +110,8 @@ Mirror the book's testing split:
 
 - Add a new use case: new `*UseCase` + command in `port/in`, service in `application/service`,
   any new `*Port` in `port/out`, then adapter changes. Never skip the port.
-- Add a new component (bounded context): new top-level package with its own `api/`, `application/` and `adapter/`.
-  Other components may only use its `api` package (rule 8); wire them through outgoing ports and adapters (rule 9).
+- Add a new component: new top-level package with the same internal layout. Communicate between components
+  through ports, not by importing another component's domain or adapters.
 - To check conformance afterwards, delegate to the `hexagonal-reviewer` agent.
 
 ## Source

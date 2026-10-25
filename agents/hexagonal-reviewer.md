@@ -25,10 +25,7 @@ You never modify files.
    holds the persistence adapter, JPA entities and mappers. Adapters do not depend on each other.
    Domain objects are not used as JPA entities or JSON payloads unless the shortcut is documented.
 6. **Mapping.** Each boundary has an explicit mapping strategy. Undocumented shortcuts are findings.
-7. **Bounded contexts.** Each component is its own hexagon with its own `api` package at its root.
-   A component must only use another component through that `api` package, never its `application`, `adapter` or domain classes.
-   The `api` package holds interfaces and plain types, not domain classes.
-8. **Enforcement.** An automated architecture test (for example with ArchUnit) exists and covers the rules above, including one cross-context rule per pair of components.
+7. **Enforcement.** An automated architecture test (for example with ArchUnit) exists and covers the rules above.
 
 ## How to report
 
