@@ -24,10 +24,12 @@ Ask only for what is missing, in one short message:
 ## 2. Package structure
 
 One top-level package per component. A component holds one or more **bounded contexts**, and each bounded context
-is its own hexagon with this layout:
+is its own hexagon. When the component has **several** contexts, each gets its own package
+(`<base>/<component>/<context>/`). When it has **a single** context, the context level is omitted from the package
+name (`<base>/<component>/`). The layout of a hexagon is:
 
 ```
-<base>/<component>/<context>/
+<base>/<component>/[<context>/]
 ├── application/
 │   ├── domain/                  # entities, value objects, domain rules
 │   ├── port/
@@ -47,7 +49,7 @@ components and the `@SpringBootApplication` class:
 <base>/
 ├── Application.java            # @SpringBootApplication
 ├── configuration/              # general Spring Java config (@Configuration classes)
-└── <component>/<context>/      # see above
+└── <component>/[<context>/]    # see above
 ```
 
 - `configuration` holds general `@Configuration` classes only (for example a `Clock` bean, security, web or
@@ -81,8 +83,12 @@ components and the `@SpringBootApplication` class:
    `adapter/out/<target-context>/`, which calls the target context's **incoming port** (`*UseCase`) directly and
    converts the source's types to the target's command. Nothing else of the target context may be used: not its
    domain, services, outgoing ports or adapters. The source's application layer only ever sees its own port.
-   Joining contexts of *different* components is not defined by this skill: ask the user.
-9. **Naming**: `*UseCase`, `*Port`, `*Service`, `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`, `SpringData*Repository`.
+9. **Joining two different components** goes through the **public API of the target component**, for example a REST
+   service, but it can be another technology (messaging, gRPC...). The source defines an outgoing port in its
+   `application/port/out`, implemented by an adapter in `adapter/out/<target-component>/` (for example
+   `<Target>RestAdapter`) that calls the target's public API and maps the response to the source's own model.
+   There is **no compile-time dependency** between the two components. If the API technology is not stated, ask the user.
+10. **Naming**: `*UseCase`, `*Port`, `*Service`, `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`, `<Target>RestAdapter` (or the technology used), `SpringData*Repository`.
 
 ## 4. Java 25 guidelines
 
@@ -132,9 +138,11 @@ Mirror the book's testing split:
 
 - Add a new use case: new `*UseCase` + command in `port/in`, service in `application/service`,
   any new `*Port` in `port/out`, then adapter changes. Never skip the port.
-- Add a new bounded context: new `<component>/<context>/` package with the same internal layout.
+- Add a new bounded context: new `<component>/<context>/` package with the same internal layout. If the component had a
+  single context until now, move its packages from `<component>/` into `<component>/<context>/`.
 - Connect two bounded contexts of the same component: follow rule 8 (outgoing port + `*DomainAdapter`).
   Never import the target context's domain, services or adapters.
+- Connect two different components: follow rule 9 (outgoing port + adapter calling the target's public API).
 - To check conformance afterwards, delegate to the `hexagonal-reviewer` agent.
 
 ## Source

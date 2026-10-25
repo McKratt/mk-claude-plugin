@@ -2,6 +2,9 @@
 
 Example slice: place an order. Base package `com.example.shop`, component `sales`, bounded context `order`.
 Replace names to fit the user's domain. All code targets Java 25 and Spring Boot.
+The slice below lives in a component with several bounded contexts (`sales/order`, `sales/billing`).
+For a component with a single context, omit the context level: `com.example.shop.sales.application.domain`,
+`com.example.shop.sales.adapter.in.web`, and so on.
 
 ## Domain (`sales/order/application/domain`)
 
@@ -354,6 +357,57 @@ class BillingDomainAdapter implements CreateInvoicePort {
 `PlaceOrderService` then takes a `CreateInvoicePort` in its constructor and calls
 `createInvoicePort.createInvoiceFor(order)` after saving. It never sees `billing`.
 
+## Calling another component through its public API (REST example)
+
+`shipping` is a different component. `sales/order` never imports its classes. It only knows `shipping`'s public API,
+here REST, and reaches it through an outgoing port and an adapter. The API could be something else (messaging, gRPC).
+
+```java
+package com.example.shop.sales.order.application.port.out;
+
+import com.example.shop.sales.order.application.domain.Order;
+
+public interface RequestShipmentPort {
+    void requestShipmentFor(Order order);
+}
+```
+
+```java
+package com.example.shop.sales.order.adapter.out.shipping;
+
+import com.example.shop.sales.order.application.domain.Order;
+import com.example.shop.sales.order.application.port.out.RequestShipmentPort;
+import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+
+@Component
+class ShippingRestAdapter implements RequestShipmentPort {
+
+    // Shape of the request expected by the shipping API, owned by this adapter.
+    record ShipmentRequest(UUID orderId) {}
+
+    private final RestClient restClient;
+
+    ShippingRestAdapter(RestClient.Builder builder, @Value("${shipping.base-url}") String baseUrl) {
+        this.restClient = builder.baseUrl(baseUrl).build();
+    }
+
+    @Override
+    public void requestShipmentFor(Order order) {
+        restClient.post()
+                .uri("/shipments")
+                .body(new ShipmentRequest(order.id().value()))
+                .retrieve()
+                .toBodilessEntity();
+    }
+}
+```
+
+The path, payload and base URL above are placeholders: use the real contract published by the target component.
+Keep the `RestClient` details, error mapping and retries inside this adapter.
+
 ## Architecture test (ArchUnit)
 
 Add `com.tngtech.archunit:archunit-junit5` with test scope, using the latest release from Maven Central.
@@ -418,6 +472,12 @@ class ArchitectureTest {
             .should().onlyDependOnClassesThat(
                     not(resideInAPackage("com.example.shop.sales.billing.."))
                             .or(resideInAPackage("com.example.shop.sales.billing.application.port.in..")));
+
+    // Different components share no classes: they only talk through the target's public API (REST here).
+    @ArchTest
+    static final ArchRule salesDoesNotUseShippingClasses = noClasses()
+            .that().resideInAPackage("com.example.shop.sales..")
+            .should().dependOnClassesThat().resideInAPackage("com.example.shop.shipping..");
 }
 ```
 

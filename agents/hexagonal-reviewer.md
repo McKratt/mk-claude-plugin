@@ -29,10 +29,13 @@ You never modify files.
    another context of the same component only through an outgoing port of its own, implemented by a
    `*DomainAdapter` in `adapter/out/<target-context>/` that uses the target's incoming port (`*UseCase` and its command)
    and nothing else of the target (no domain, services, outgoing ports or adapters). Anything else is a violation.
-   Links between different components are not defined by the rules: report them as observations.
-8. **Configuration.** General Spring Java config (`@Configuration` classes) lives in a `configuration` package directly under the
+   A component with a single bounded context omits the context level in its package names.
+8. **Different components.** Components share no classes. A component reaches another only through the target's
+   public API (for example REST, or messaging), via an outgoing port and an adapter in `adapter/out/<target-component>/`.
+   Any import of another component's classes is a violation, unless the user documented an in-process API.
+9. **Configuration.** General Spring Java config (`@Configuration` classes) lives in a `configuration` package directly under the
    base package. Nothing outside `configuration` may depend on it. Component-specific wiring stays inside the component.
-9. **Enforcement.** An automated architecture test (for example with ArchUnit) exists and covers the rules above.
+10. **Enforcement.** An automated architecture test (for example with ArchUnit) exists and covers the rules above.
 
 ## How to report
 
