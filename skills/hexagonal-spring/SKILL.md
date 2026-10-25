@@ -38,8 +38,22 @@ One top-level package per component, with this layout inside:
     └── out/persistence/         # persistence adapter, JPA entities, mappers, Spring Data repositories
 ```
 
-Application-wide wiring (`@SpringBootApplication` class, shared configuration) stays in the base package or a `config` package.
-The `config` package is a convention of this skill, not a rule of the book.
+Application-wide configuration lives in a `configuration` package directly under the base package, next to the
+components and the `@SpringBootApplication` class:
+
+```
+<base>/
+├── Application.java            # @SpringBootApplication
+├── configuration/              # general Spring Java config (@Configuration classes)
+└── <component>/                # see above
+```
+
+- `configuration` holds general `@Configuration` classes only (for example a `Clock` bean, security, web or
+  Jackson settings).
+- Configuration classes may depend on anything, since they assemble the application. **Nothing depends on
+  `configuration`**: components never import it.
+- Component-specific wiring stays inside the component. The `configuration` package
+  is a convention of this skill, not a rule of the book.
 
 ## 3. Rules
 
@@ -88,7 +102,7 @@ Mirror the book's testing split:
 ## 6. Assembly and boundaries
 
 - Default to Spring classpath scanning (`@Service`, `@RestController`, `@Component` on adapters).
-  Use explicit `@Configuration` with `@Bean` methods when you want the application layer free of Spring annotations.
+  Use explicit `@Configuration` with `@Bean` methods, kept inside the component, when you want the application layer free of Spring annotations.
 - `@Transactional` and `@Service` on services are accepted pragmatic shortcuts. Note them in the architecture notes.
 - **Multi-module option**: separate Maven/Gradle modules (`application` including its `domain` package, `adapter-web`,
   `adapter-persistence`, `bootstrap`) make illegal dependencies impossible to compile. Offer it for larger projects;

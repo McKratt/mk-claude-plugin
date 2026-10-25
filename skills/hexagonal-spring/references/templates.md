@@ -320,8 +320,34 @@ class ArchitectureTest {
     static final ArchRule outboundAdaptersDoNotUseInboundAdapters = noClasses()
             .that().resideInAPackage("..adapter.out..")
             .should().dependOnClassesThat().resideInAPackage("..adapter.in..");
+
+    @ArchTest
+    static final ArchRule nothingDependsOnConfiguration = noClasses()
+            .that().resideOutsideOfPackage("com.example.shop.configuration..")
+            .should().dependOnClassesThat().resideInAPackage("com.example.shop.configuration..");
 }
 ```
+
+## General configuration (`com.example.shop.configuration`)
+
+```java
+package com.example.shop.configuration;
+
+import java.time.Clock;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+class ClockConfiguration {
+
+    @Bean
+    Clock clock() {
+        return Clock.systemUTC();
+    }
+}
+```
+
+Place other general `@Configuration` classes here (web, security, serialization). Component-specific wiring stays inside its component.
 
 ## Test examples
 

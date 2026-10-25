@@ -25,7 +25,9 @@ You never modify files.
    holds the persistence adapter, JPA entities and mappers. Adapters do not depend on each other.
    Domain objects are not used as JPA entities or JSON payloads unless the shortcut is documented.
 6. **Mapping.** Each boundary has an explicit mapping strategy. Undocumented shortcuts are findings.
-7. **Enforcement.** An automated architecture test (for example with ArchUnit) exists and covers the rules above.
+7. **Configuration.** General Spring Java config (`@Configuration` classes) lives in a `configuration` package directly under the
+   base package. Nothing outside `configuration` may depend on it. Component-specific wiring stays inside the component.
+8. **Enforcement.** An automated architecture test (for example with ArchUnit) exists and covers the rules above.
 
 ## How to report
 
