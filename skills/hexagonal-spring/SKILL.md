@@ -45,7 +45,7 @@ The `config` package is a convention of this skill, not a rule of the book.
 
 1. **Dependencies point inward.** `adapter` → `application` (ports and services) → `application/domain`.
    The domain package sits inside `application` but depends on nothing else, not even on ports or services:
-   no Spring, no JPA, no Jackson and no JSON annotations or types of any kind.
+   no Spring, no ORM (JPA/Jakarta Persistence, Hibernate and similar) and no Jackson or JSON annotations or types of any kind.
    **Lombok is allowed in the domain** (and only compile-time annotations like it), because it adds no runtime dependency on a framework.
 2. **One narrow incoming port per use case**, named `<Verb><Noun>UseCase`
    (for example `PlaceOrderUseCase`). Avoid "broad" service interfaces.

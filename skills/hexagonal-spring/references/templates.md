@@ -300,7 +300,9 @@ class ArchitectureTest {
             .that().resideInAPackage("..application.domain..")
             .should().dependOnClassesThat().resideInAnyPackage(
                     "..application.port..", "..application.service..", "..adapter..",
-                    "org.springframework..", "jakarta.persistence..",
+                    "org.springframework..",
+                    "jakarta.persistence..", "javax.persistence..", "org.hibernate..",
+                    "org.eclipse.persistence..", "org.mybatis..",
                     "com.fasterxml.jackson..", "tools.jackson..", "jakarta.json..", "com.google.gson..", "org.json..");
     // Lombok (lombok..) is deliberately not forbidden in the domain.
 
