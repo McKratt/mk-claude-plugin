@@ -7,6 +7,20 @@ For a component with a single context, omit the context level: `com.example.shop
 `com.example.shop.sales.adapter.in.web`, and so on. Utilities usable anywhere in the component go in
 `com.example.shop.sales.common`.
 
+## Null-safety (JSpecify)
+
+Add `org.jspecify:jspecify` (version managed by the Spring Boot BOM). Mark the domain and port packages
+(`application/domain/model`, `application/domain/service`, `application/port/in`, `application/port/out`) as
+`@NullMarked`, so every type is non-null unless annotated `@Nullable`:
+
+```java
+// sales/order/application/domain/model/package-info.java
+@NullMarked
+package com.example.shop.sales.order.application.domain.model;
+
+import org.jspecify.annotations.NullMarked;
+```
+
 ## Domain (`sales/order/application/domain/model`)
 
 ```java
