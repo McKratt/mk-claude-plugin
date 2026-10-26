@@ -2,7 +2,7 @@ package com.example.shop.sales.order.application.port.out;
 
 import com.example.shop.sales.order.application.domain.model.Order;
 
-public interface SaveOrderPort {
+public interface InvoiceIssuer {
 
-    void save(Order order);
+    void createInvoiceFor(Order order);
 }

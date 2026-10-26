@@ -1,14 +1,14 @@
 package com.example.shop.sales.billing.adapter.out.persistence;
 
 import com.example.shop.sales.billing.application.domain.model.Invoice;
-import com.example.shop.sales.billing.application.port.out.LoadInvoicePort;
-import com.example.shop.sales.billing.application.port.out.SaveInvoicePort;
+import com.example.shop.sales.billing.application.port.out.InvoiceFinder;
+import com.example.shop.sales.billing.application.port.out.InvoiceStore;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 
 @RequiredArgsConstructor
-class InvoicePersistenceAdapter implements SaveInvoicePort, LoadInvoicePort {
+class InvoicePersistenceAdapter implements InvoiceStore, InvoiceFinder {
 
     private final SpringDataInvoiceRepository repository;
 

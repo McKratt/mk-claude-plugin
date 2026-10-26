@@ -2,20 +2,20 @@ package com.example.shop.sales.billing.application.domain.service;
 
 import com.example.shop.sales.billing.application.domain.model.Invoice;
 import com.example.shop.sales.billing.application.port.in.FindInvoiceByOrderQuery;
-import com.example.shop.sales.billing.application.port.in.FindInvoiceByOrderUseCase;
-import com.example.shop.sales.billing.application.port.out.LoadInvoicePort;
+import com.example.shop.sales.billing.application.port.in.InvoiceLookup;
+import com.example.shop.sales.billing.application.port.out.InvoiceFinder;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
 @RequiredArgsConstructor
-public class FindInvoiceByOrderService implements FindInvoiceByOrderUseCase {
+public class FindInvoiceByOrderService implements InvoiceLookup {
 
-    private final LoadInvoicePort loadInvoicePort;
+    private final InvoiceFinder invoiceFinder;
 
     @Override
     @Transactional(readOnly = true)
     public Optional<Invoice> findByOrder(FindInvoiceByOrderQuery query) {
-        return loadInvoicePort.loadByOrderId(query.orderId());
+        return invoiceFinder.loadByOrderId(query.orderId());
     }
 }

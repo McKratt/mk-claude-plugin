@@ -1,7 +1,7 @@
 package com.example.shop.sales.billing.adapter.out.persistence;
 
-import com.example.shop.sales.billing.application.port.out.LoadInvoicePort;
-import com.example.shop.sales.billing.application.port.out.SaveInvoicePort;
+import com.example.shop.sales.billing.application.port.out.InvoiceFinder;
+import com.example.shop.sales.billing.application.port.out.InvoiceStore;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 

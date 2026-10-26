@@ -2,10 +2,10 @@ package com.example.shop.sales.billing.configuration;
 
 import com.example.shop.sales.billing.application.domain.service.CreateInvoiceService;
 import com.example.shop.sales.billing.application.domain.service.FindInvoiceByOrderService;
-import com.example.shop.sales.billing.application.port.in.CreateInvoiceUseCase;
-import com.example.shop.sales.billing.application.port.in.FindInvoiceByOrderUseCase;
-import com.example.shop.sales.billing.application.port.out.LoadInvoicePort;
-import com.example.shop.sales.billing.application.port.out.SaveInvoicePort;
+import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
+import com.example.shop.sales.billing.application.port.in.InvoiceLookup;
+import com.example.shop.sales.billing.application.port.out.InvoiceFinder;
+import com.example.shop.sales.billing.application.port.out.InvoiceStore;
 import java.time.Clock;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,12 +14,12 @@ import org.springframework.context.annotation.Configuration;
 class BillingConfiguration {
 
     @Bean
-    CreateInvoiceUseCase createInvoiceUseCase(SaveInvoicePort saveInvoicePort, Clock clock) {
-        return new CreateInvoiceService(saveInvoicePort, clock);
+    InvoiceCreation invoiceCreation(InvoiceStore invoiceStore, Clock clock) {
+        return new CreateInvoiceService(invoiceStore, clock);
     }
 
     @Bean
-    FindInvoiceByOrderUseCase findInvoiceByOrderUseCase(LoadInvoicePort loadInvoicePort) {
-        return new FindInvoiceByOrderService(loadInvoicePort);
+    InvoiceLookup invoiceLookup(InvoiceFinder invoiceFinder) {
+        return new FindInvoiceByOrderService(invoiceFinder);
     }
 }

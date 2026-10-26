@@ -1,7 +1,7 @@
 package com.example.shop.sales.adapter.in.web;
 
 import com.example.shop.sales.application.port.in.PlaceOrderCommand;
-import com.example.shop.sales.application.port.in.PlaceOrderUseCase;
+import com.example.shop.sales.application.port.in.OrderPlacement;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -30,7 +30,7 @@ class PlaceOrderController {
     record Response(UUID id) {
     }
 
-    private final PlaceOrderUseCase placeOrderUseCase;
+    private final OrderPlacement orderPlacement;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -39,7 +39,7 @@ class PlaceOrderController {
         var command = new PlaceOrderCommand(lines.stream()
                 .map(line -> new PlaceOrderCommand.Line(line.sku(), line.quantity()))
                 .toList());
-        return new Response(placeOrderUseCase.placeOrder(command).value());
+        return new Response(orderPlacement.placeOrder(command).value());
     }
 
     /** Self-validating commands and domain rules throw IllegalArgumentException. */

@@ -1,7 +1,7 @@
 package com.example.shop.sales.billing.adapter.in.web;
 
 import com.example.shop.sales.billing.application.port.in.FindInvoiceByOrderQuery;
-import com.example.shop.sales.billing.application.port.in.FindInvoiceByOrderUseCase;
+import com.example.shop.sales.billing.application.port.in.InvoiceLookup;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -24,11 +24,11 @@ class InvoiceController {
     record Response(UUID id, UUID orderId, int itemCount, Instant issuedAt) {
     }
 
-    private final FindInvoiceByOrderUseCase findInvoiceByOrderUseCase;
+    private final InvoiceLookup invoiceLookup;
 
     @GetMapping("/by-order/{orderId}")
     ResponseEntity<Response> findByOrder(@PathVariable("orderId") UUID orderId) {
-        return findInvoiceByOrderUseCase.findByOrder(new FindInvoiceByOrderQuery(orderId))
+        return invoiceLookup.findByOrder(new FindInvoiceByOrderQuery(orderId))
                 .map(invoice -> new Response(invoice.getId(), invoice.getOrderId(),
                         invoice.getItemCount(), invoice.getIssuedAt()))
                 .map(ResponseEntity::ok)

@@ -7,8 +7,8 @@ import static org.mockito.Mockito.verify;
 
 import com.example.shop.sales.order.application.domain.model.Order;
 import com.example.shop.sales.order.application.port.in.PlaceOrderCommand;
-import com.example.shop.sales.order.application.port.out.CreateInvoicePort;
-import com.example.shop.sales.order.application.port.out.SaveOrderPort;
+import com.example.shop.sales.order.application.port.out.InvoiceIssuer;
+import com.example.shop.sales.order.application.port.out.OrderStore;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -21,9 +21,9 @@ class PlaceOrderServiceTest {
     private static final Instant NOW = Instant.parse("2026-01-01T10:00:00Z");
     private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
 
-    private final SaveOrderPort saveOrderPort = mock(SaveOrderPort.class);
-    private final CreateInvoicePort createInvoicePort = mock(CreateInvoicePort.class);
-    private final PlaceOrderService service = new PlaceOrderService(saveOrderPort, createInvoicePort, CLOCK);
+    private final OrderStore orderStore = mock(OrderStore.class);
+    private final InvoiceIssuer invoiceIssuer = mock(InvoiceIssuer.class);
+    private final PlaceOrderService service = new PlaceOrderService(orderStore, invoiceIssuer, CLOCK);
 
     @Test
     void savesTheOrderWithTheCurrentInstant() {
@@ -31,7 +31,7 @@ class PlaceOrderServiceTest {
                 new PlaceOrderCommand(List.of(new PlaceOrderCommand.Line("SKU-1", 2))));
 
         var captor = ArgumentCaptor.forClass(Order.class);
-        verify(saveOrderPort).save(captor.capture());
+        verify(orderStore).save(captor.capture());
         assertEquals(orderId, captor.getValue().getId());
         assertEquals(NOW, captor.getValue().getPlacedAt());
     }
@@ -40,6 +40,6 @@ class PlaceOrderServiceTest {
     void asksForAnInvoiceOncePlaced() {
         service.placeOrder(new PlaceOrderCommand(List.of(new PlaceOrderCommand.Line("SKU-1", 1))));
 
-        verify(createInvoicePort).createInvoiceFor(any(Order.class));
+        verify(invoiceIssuer).createInvoiceFor(any(Order.class));
     }
 }

@@ -1,6 +1,6 @@
 package com.example.shop.sales.order.adapter.out.persistence;
 
-import com.example.shop.sales.order.application.port.out.SaveOrderPort;
+import com.example.shop.sales.order.application.port.out.OrderStore;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Configuration;
 class OrderPersistenceAdapterConfiguration {
 
     @Bean
-    SaveOrderPort saveOrderPort(SpringDataOrderRepository repository) {
+    OrderStore orderStore(SpringDataOrderRepository repository) {
         return new OrderPersistenceAdapter(repository);
     }
 }
