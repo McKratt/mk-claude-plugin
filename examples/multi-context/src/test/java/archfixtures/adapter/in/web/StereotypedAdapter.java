@@ -1,7 +1,7 @@
 package archfixtures.adapter.in.web;
 
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.stereotype.Component;
 
-@RestController
+@Component
 class StereotypedAdapter {
 }

@@ -12,11 +12,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
-import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.RestController;
 
-// No @RestController: the bean is declared in the adapter's configuration class.
-// A type-level @RequestMapping is enough for Spring MVC to detect the handler.
-@ResponseBody
+// Spring MVC only detects handlers carrying @Controller / @RestController: the one stereotype allowed
+// on an adapter. The controller is found by component scanning, not created in a configuration class.
+@RestController
 @RequestMapping("/orders")
 @RequiredArgsConstructor
 class PlaceOrderController {
