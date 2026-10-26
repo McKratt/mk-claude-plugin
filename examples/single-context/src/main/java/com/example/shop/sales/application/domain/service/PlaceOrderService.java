@@ -10,8 +10,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
 // No stereotype annotation: the bean is declared in the hexagon's configuration package.
-// @Transactional is the one accepted exception to the purity of the domain.
-@Transactional
+// @Transactional is the one accepted exception to the purity of the domain. It goes on the methods,
+// never on the class, so each method chooses its own transaction (read-only or not).
 @RequiredArgsConstructor
 public class PlaceOrderService implements PlaceOrderUseCase {
 
@@ -19,6 +19,7 @@ public class PlaceOrderService implements PlaceOrderUseCase {
     private final Clock clock;
 
     @Override
+    @Transactional
     public OrderId placeOrder(PlaceOrderCommand command) {
         var lines = command.lines().stream()
                 .map(line -> new Order.Line(line.sku(), line.quantity()))

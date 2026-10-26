@@ -12,6 +12,7 @@ import com.tngtech.archunit.lang.ArchRule;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Controller;
+import org.springframework.transaction.annotation.Transactional;
 
 @AnalyzeClasses(packages = "com.example.shop", importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
@@ -46,6 +47,13 @@ class ArchitectureTest {
             .should().dependOnClassesThat(
                     resideInAPackage("org.springframework..")
                             .and(not(resideInAPackage("org.springframework.transaction.annotation"))));
+
+    // @Transactional goes on methods, never on the class: a class-level annotation would open a
+    // read-write transaction for every public method, including those that only read.
+    @ArchTest
+    static final ArchRule transactionalIsNeverOnAServiceClass = noClasses()
+            .that().resideInAPackage("..application.domain.service..")
+            .should().beAnnotatedWith(Transactional.class);
 
     @ArchTest
     static final ArchRule commonIsIndependent = noClasses()

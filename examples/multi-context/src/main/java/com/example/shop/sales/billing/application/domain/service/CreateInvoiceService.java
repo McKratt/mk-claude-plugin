@@ -8,7 +8,6 @@ import java.time.Clock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
-@Transactional
 @RequiredArgsConstructor
 public class CreateInvoiceService implements CreateInvoiceUseCase {
 
@@ -16,6 +15,7 @@ public class CreateInvoiceService implements CreateInvoiceUseCase {
     private final Clock clock;
 
     @Override
+    @Transactional
     public void createInvoice(CreateInvoiceCommand command) {
         saveInvoicePort.save(Invoice.issue(command.orderId(), command.itemCount(), clock.instant()));
     }
