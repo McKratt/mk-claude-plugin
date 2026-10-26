@@ -34,7 +34,7 @@ jobs:
         run: |
           set -o pipefail
           mvn -B -ntp verify 2>&1 | tee build.log || {
-            grep -E "^\[(ERROR|WARNING)\]|Tests run:.*(Failures: [1-9]|Errors: [1-9])" build.log | head -40 \
+            grep -hE "Class <|Caused by|Method <|Constructor <|Field <|Error creating|Unsatisfied|No qualifying|Failed to" build.log target/surefire-reports/*.txt 2>/dev/null | sort -u | head -40 \
               | while IFS= read -r l; do echo "::error::${l:0:900}"; done
             exit 1
           }
