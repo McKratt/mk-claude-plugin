@@ -7,7 +7,7 @@ Personal Claude Code plugin: skills and agents for Java / Spring Boot projects.
 | Type  | Name                | Invocation                         | Purpose                                                                                   |
 | ----- | ------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------- |
 | Skill | `hexagonal-spring`  | `/mk-claude-plugin:hexagonal-spring` | Structure a Spring Boot / Java 25 project following *Get Your Hands Dirty on Clean Architecture* |
-| Agent | `hexagonal-reviewer` | `mk-claude-plugin:hexagonal-reviewer` | Read-only review of a codebase against the same architecture rules                        |
+| Agent | `spring-hexagonal-reviewer` | `mk-claude-plugin:spring-hexagonal-reviewer` | Read-only review of a codebase against the same architecture rules                        |
 
 ## Layout
 

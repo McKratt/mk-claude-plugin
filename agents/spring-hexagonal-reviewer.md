@@ -1,5 +1,5 @@
 ---
-name: hexagonal-reviewer
+name: spring-hexagonal-reviewer
 description: Read-only reviewer that checks a Java / Spring Boot codebase against hexagonal (ports and adapters) architecture rules. Use after scaffolding or when asked to review architecture boundaries.
 tools: Read, Glob, Grep
 model: inherit

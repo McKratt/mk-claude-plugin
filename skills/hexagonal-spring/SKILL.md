@@ -178,7 +178,7 @@ Mirror the book's testing split:
 - Connect two bounded contexts of the same component: follow rule 8 (outgoing port + `*DomainAdapter`).
   Never import the target context's domain, services or adapters.
 - Connect two different components: follow rule 9 (outgoing port + adapter calling the target's public API).
-- To check conformance afterwards, delegate to the `hexagonal-reviewer` agent.
+- To check conformance afterwards, delegate to the `spring-hexagonal-reviewer` agent.
 
 ## Source
 
