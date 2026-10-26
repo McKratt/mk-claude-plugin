@@ -1,7 +1,6 @@
 package com.example.shop;
 
 import static com.tngtech.archunit.base.DescribedPredicate.not;
-import static com.tngtech.archunit.core.domain.JavaClass.Predicates.equivalentTo;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
@@ -10,7 +9,6 @@ import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
-import org.springframework.transaction.annotation.Transactional;
 
 @AnalyzeClasses(packages = "com.example.shop", importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
@@ -38,12 +36,13 @@ class ArchitectureTest {
             .that().resideInAPackage("..application.domain.service..")
             .should().dependOnClassesThat().resideInAPackage("..adapter..");
 
-    // @Service and @Component are forbidden on services; @Transactional is the only Spring type allowed.
+    // @Service and @Component are forbidden on services; only @Transactional (with its Propagation/Isolation members) is allowed.
     @ArchTest
     static final ArchRule servicesUseSpringOnlyForTransactional = noClasses()
             .that().resideInAPackage("..application.domain.service..")
             .should().dependOnClassesThat(
-                    resideInAPackage("org.springframework..").and(not(equivalentTo(Transactional.class))));
+                    resideInAPackage("org.springframework..")
+                            .and(not(resideInAPackage("org.springframework.transaction.annotation"))));
 
     @ArchTest
     static final ArchRule commonIsIndependent = noClasses()
