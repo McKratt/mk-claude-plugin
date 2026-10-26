@@ -69,7 +69,7 @@ package com.example.shop.sales.order.application.port.in;
 
 import com.example.shop.sales.order.application.domain.model.OrderId;
 
-public interface PlaceOrderUseCase {
+public interface OrderPlacement {
     OrderId placeOrder(PlaceOrderCommand command);
 }
 ```
@@ -109,7 +109,7 @@ package com.example.shop.sales.order.application.port.out;
 
 import com.example.shop.sales.order.application.domain.model.Order;
 
-public interface SaveOrderPort {
+public interface OrderStore {
     void save(Order order);
 }
 ```
@@ -120,20 +120,20 @@ public interface SaveOrderPort {
 package com.example.shop.sales.order.application.domain.service;
 
 import com.example.shop.sales.order.application.port.in.PlaceOrderCommand;
-import com.example.shop.sales.order.application.port.in.PlaceOrderUseCase;
-import com.example.shop.sales.order.application.port.out.SaveOrderPort;
+import com.example.shop.sales.order.application.port.in.OrderPlacement;
+import com.example.shop.sales.order.application.port.out.OrderStore;
 import com.example.shop.sales.order.application.domain.model.Order;
 import com.example.shop.sales.order.application.domain.model.OrderId;
 import org.springframework.transaction.annotation.Transactional;
 
 // No @Service: the bean is declared in OrderConfiguration. @Transactional is the one accepted
 // exception to the purity of the domain. Put it on methods, never on the class, so queries can be read-only.
-public class PlaceOrderService implements PlaceOrderUseCase {
+public class PlaceOrderService implements OrderPlacement {
 
-    private final SaveOrderPort saveOrderPort;
+    private final OrderStore orderStore;
 
-    public PlaceOrderService(SaveOrderPort saveOrderPort) {
-        this.saveOrderPort = saveOrderPort;
+    public PlaceOrderService(OrderStore orderStore) {
+        this.orderStore = orderStore;
     }
 
     @Override
@@ -143,7 +143,7 @@ public class PlaceOrderService implements PlaceOrderUseCase {
                 .map(l -> new Order.Line(l.sku(), l.quantity()))
                 .toList();
         var order = Order.place(lines);
-        saveOrderPort.save(order);
+        orderStore.save(order);
         return order.id();
     }
 }
@@ -157,8 +157,8 @@ Services carry no stereotype annotation, so each one is declared with a `@Bean` 
 package com.example.shop.sales.order.configuration;
 
 import com.example.shop.sales.order.application.domain.service.PlaceOrderService;
-import com.example.shop.sales.order.application.port.in.PlaceOrderUseCase;
-import com.example.shop.sales.order.application.port.out.SaveOrderPort;
+import com.example.shop.sales.order.application.port.in.OrderPlacement;
+import com.example.shop.sales.order.application.port.out.OrderStore;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -166,8 +166,8 @@ import org.springframework.context.annotation.Configuration;
 class OrderConfiguration {
 
     @Bean
-    PlaceOrderUseCase placeOrderUseCase(SaveOrderPort saveOrderPort) {
-        return new PlaceOrderService(saveOrderPort);
+    OrderPlacement orderPlacement(OrderStore orderStore) {
+        return new PlaceOrderService(orderStore);
     }
 }
 ```
@@ -178,7 +178,7 @@ class OrderConfiguration {
 package com.example.shop.sales.order.adapter.in.web;
 
 import com.example.shop.sales.order.application.port.in.PlaceOrderCommand;
-import com.example.shop.sales.order.application.port.in.PlaceOrderUseCase;
+import com.example.shop.sales.order.application.port.in.OrderPlacement;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -196,10 +196,10 @@ class PlaceOrderController {
 
     record Response(UUID id) {}
 
-    private final PlaceOrderUseCase placeOrderUseCase;
+    private final OrderPlacement orderPlacement;
 
-    PlaceOrderController(PlaceOrderUseCase placeOrderUseCase) {
-        this.placeOrderUseCase = placeOrderUseCase;
+    PlaceOrderController(OrderPlacement orderPlacement) {
+        this.orderPlacement = orderPlacement;
     }
 
     @PostMapping
@@ -209,7 +209,7 @@ class PlaceOrderController {
                 request.lines().stream()
                         .map(l -> new PlaceOrderCommand.Line(l.sku(), l.quantity()))
                         .toList());
-        return new Response(placeOrderUseCase.placeOrder(command).value());
+        return new Response(orderPlacement.placeOrder(command).value());
     }
 
     /** Self-validating commands throw IllegalArgumentException: answer HTTP 400. */
@@ -282,9 +282,9 @@ interface SpringDataOrderRepository extends JpaRepository<OrderJpaEntity, UUID> 
 ```java
 package com.example.shop.sales.order.adapter.out.persistence;
 
-import com.example.shop.sales.order.application.port.out.SaveOrderPort;
+import com.example.shop.sales.order.application.port.out.OrderStore;
 import com.example.shop.sales.order.application.domain.model.Order;
-class OrderPersistenceAdapter implements SaveOrderPort {
+class OrderPersistenceAdapter implements OrderStore {
 
     private final SpringDataOrderRepository repository;
 
@@ -309,7 +309,7 @@ class OrderPersistenceAdapter implements SaveOrderPort {
 ```java
 package com.example.shop.sales.order.adapter.out.persistence;
 
-import com.example.shop.sales.order.application.port.out.SaveOrderPort;
+import com.example.shop.sales.order.application.port.out.OrderStore;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -317,7 +317,7 @@ import org.springframework.context.annotation.Configuration;
 class OrderPersistenceAdapterConfiguration {
 
     @Bean
-    SaveOrderPort saveOrderPort(SpringDataOrderRepository repository) {
+    OrderStore orderStore(SpringDataOrderRepository repository) {
         return new OrderPersistenceAdapter(repository);
     }
 }
@@ -339,7 +339,7 @@ Target context `billing`: incoming port and command (`sales/billing/application/
 ```java
 package com.example.shop.sales.billing.application.port.in;
 
-public interface CreateInvoiceUseCase {
+public interface InvoiceCreation {
     void createInvoice(CreateInvoiceCommand command);
 }
 ```
@@ -367,7 +367,7 @@ package com.example.shop.sales.order.application.port.out;
 
 import com.example.shop.sales.order.application.domain.model.Order;
 
-public interface CreateInvoicePort {
+public interface InvoiceIssuer {
     void createInvoiceFor(Order order);
 }
 ```
@@ -379,22 +379,22 @@ incoming port directly and converts `order` types into the target's command.
 package com.example.shop.sales.order.adapter.out.billing;
 
 import com.example.shop.sales.billing.application.port.in.CreateInvoiceCommand;
-import com.example.shop.sales.billing.application.port.in.CreateInvoiceUseCase;
+import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
 import com.example.shop.sales.order.application.domain.model.Order;
-import com.example.shop.sales.order.application.port.out.CreateInvoicePort;
+import com.example.shop.sales.order.application.port.out.InvoiceIssuer;
 
-class BillingDomainAdapter implements CreateInvoicePort {
+class BillingDomainAdapter implements InvoiceIssuer {
 
-    private final CreateInvoiceUseCase createInvoiceUseCase;
+    private final InvoiceCreation invoiceCreation;
 
-    BillingDomainAdapter(CreateInvoiceUseCase createInvoiceUseCase) {
-        this.createInvoiceUseCase = createInvoiceUseCase;
+    BillingDomainAdapter(InvoiceCreation invoiceCreation) {
+        this.invoiceCreation = invoiceCreation;
     }
 
     @Override
     public void createInvoiceFor(Order order) {
         int itemCount = order.lines().stream().mapToInt(Order.Line::quantity).sum();
-        createInvoiceUseCase.createInvoice(new CreateInvoiceCommand(order.id().value(), itemCount));
+        invoiceCreation.createInvoice(new CreateInvoiceCommand(order.id().value(), itemCount));
     }
 }
 ```
@@ -402,8 +402,8 @@ class BillingDomainAdapter implements CreateInvoicePort {
 ```java
 package com.example.shop.sales.order.adapter.out.billing;
 
-import com.example.shop.sales.billing.application.port.in.CreateInvoiceUseCase;
-import com.example.shop.sales.order.application.port.out.CreateInvoicePort;
+import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
+import com.example.shop.sales.order.application.port.out.InvoiceIssuer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -411,14 +411,14 @@ import org.springframework.context.annotation.Configuration;
 class OrderBillingDomainAdapterConfiguration {
 
     @Bean
-    CreateInvoicePort createInvoicePort(CreateInvoiceUseCase createInvoiceUseCase) {
-        return new BillingDomainAdapter(createInvoiceUseCase);
+    InvoiceIssuer invoiceIssuer(InvoiceCreation invoiceCreation) {
+        return new BillingDomainAdapter(invoiceCreation);
     }
 }
 ```
 
-`PlaceOrderService` then takes a `CreateInvoicePort` in its constructor and calls
-`createInvoicePort.createInvoiceFor(order)` after saving. It never sees `billing`.
+`PlaceOrderService` then takes a `InvoiceIssuer` in its constructor and calls
+`invoiceIssuer.createInvoiceFor(order)` after saving. It never sees `billing`.
 
 ## Calling another component through its public API (REST example)
 
@@ -430,7 +430,7 @@ package com.example.shop.sales.order.application.port.out;
 
 import com.example.shop.sales.order.application.domain.model.Order;
 
-public interface RequestShipmentPort {
+public interface ShipmentRequester {
     void requestShipmentFor(Order order);
 }
 ```
@@ -439,11 +439,11 @@ public interface RequestShipmentPort {
 package com.example.shop.sales.order.adapter.out.shipping;
 
 import com.example.shop.sales.order.application.domain.model.Order;
-import com.example.shop.sales.order.application.port.out.RequestShipmentPort;
+import com.example.shop.sales.order.application.port.out.ShipmentRequester;
 import java.util.UUID;
 import org.springframework.web.client.RestClient;
 
-class ShippingRestAdapter implements RequestShipmentPort {
+class ShippingRestAdapter implements ShipmentRequester {
 
     // Shape of the request expected by the shipping API, owned by this adapter.
     record ShipmentRequest(UUID orderId) {}
@@ -468,7 +468,7 @@ class ShippingRestAdapter implements RequestShipmentPort {
 ```java
 package com.example.shop.sales.order.adapter.out.shipping;
 
-import com.example.shop.sales.order.application.port.out.RequestShipmentPort;
+import com.example.shop.sales.order.application.port.out.ShipmentRequester;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -478,7 +478,7 @@ import org.springframework.web.client.RestClient;
 class OrderShippingRestAdapterConfiguration {
 
     @Bean
-    RequestShipmentPort requestShipmentPort(RestClient.Builder builder, @Value("${shipping.base-url}") String baseUrl) {
+    ShipmentRequester shipmentRequester(RestClient.Builder builder, @Value("${shipping.base-url}") String baseUrl) {
         return new ShippingRestAdapter(builder.baseUrl(baseUrl).build());
     }
 }
@@ -573,6 +573,25 @@ class ArchitectureTest {
             .should().notBePublic();
 
     @ArchTest
+    static final ArchRule portsAreInterfaces = classes()
+            .that().resideInAPackage("..application.port..")
+            .and().areNotAssignableTo(Record.class)
+            .should().beInterfaces();
+
+    // https://www.baeldung.com/java-interface-naming-conventions: noun or adjective, no "I" prefix, no "Impl" suffix.
+    @ArchTest
+    static final ArchRule interfaceNamesFollowJavaConventions = noClasses()
+            .that().areInterfaces()
+            .should().haveSimpleNameEndingWith("Port")
+            .orShould().haveSimpleNameEndingWith("UseCase")
+            .orShould().haveSimpleNameEndingWith("Impl")
+            .orShould().haveNameMatching(".*[.]I[A-Z][^.]*");
+
+    @ArchTest
+    static final ArchRule noImplSuffixOnClasses = noClasses()
+            .should().haveSimpleNameEndingWith("Impl");
+
+    @ArchTest
     static final ArchRule nobodyDependsOnConfigurationClasses = noClasses()
             .should().dependOnClassesThat().areAnnotatedWith(Configuration.class);
 
@@ -644,20 +663,20 @@ package com.example.shop.sales.order.application.domain.service;
 import static org.mockito.Mockito.*;
 
 import com.example.shop.sales.order.application.port.in.PlaceOrderCommand;
-import com.example.shop.sales.order.application.port.out.SaveOrderPort;
+import com.example.shop.sales.order.application.port.out.OrderStore;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class PlaceOrderServiceTest {
 
-    private final SaveOrderPort saveOrderPort = mock(SaveOrderPort.class);
-    private final PlaceOrderService service = new PlaceOrderService(saveOrderPort);
+    private final OrderStore orderStore = mock(OrderStore.class);
+    private final PlaceOrderService service = new PlaceOrderService(orderStore);
 
     @Test
     void savesTheOrder() {
         service.placeOrder(new PlaceOrderCommand(List.of(new PlaceOrderCommand.Line("SKU-1", 2))));
 
-        verify(saveOrderPort).save(any());
+        verify(orderStore).save(any());
     }
 }
 ```

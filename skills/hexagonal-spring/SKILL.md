@@ -43,8 +43,8 @@ Layout of a hexagon (`<hexagon>` = `<base>/<component>/[<context>/]`):
 │   │   ├── model/               # entities, value objects, domain rules (framework-free)
 │   │   └── service/             # *Service: implements incoming ports, uses outgoing ports
 │   └── port/
-│       ├── in/                  # incoming ports: *UseCase + one command per use case
-│       └── out/                 # outgoing ports: *Port
+│       ├── in/                  # incoming ports (use cases) + one command per use case
+│       └── out/                 # outgoing ports
 ├── adapter/                     # outgoing adapter packages also hold their own *AdapterConfiguration (rule 7)
 │   ├── in/web/                  # controllers, web models
 │   ├── out/persistence/         # persistence adapter, JPA entities, mappers, Spring Data repositories
@@ -78,10 +78,14 @@ components and the `@SpringBootApplication` class:
      ORM and JSON, and of Spring annotations: **no `@Service` or `@Component`**. The single exception is
      `@Transactional`, an accepted exception to the purity of the domain.
    - **Lombok is allowed in the whole domain** (compile-time only, no runtime framework dependency).
-2. **One narrow incoming port per use case**, named `<Verb><Noun>UseCase`
-   (for example `PlaceOrderUseCase`). Avoid "broad" service interfaces.
-3. **Outgoing ports** are named `<Action><Noun>Port` (for example `SaveOrderPort`, `LoadOrderPort`)
-   and are defined by the application, implemented by adapters.
+2. **One narrow incoming port per use case** (an interface in `port/in`), named as a noun for what it offers
+   (for example `OrderPlacement`, `InvoiceLookup`). Avoid "broad" service interfaces.
+3. **Outgoing ports** (interfaces in `port/out`) are named as a noun for the role they play, for example
+   `OrderStore`, `InvoiceFinder`, `InvoiceIssuer`, and are defined by the application, implemented by adapters.
+   **Interface names follow the usual Java conventions** ([Baeldung](https://www.baeldung.com/java-interface-naming-conventions)):
+   a noun for a polymorphic interface (`List`, `Connection`) or an adjective for a capability (`Comparable`), the
+   implementation combining its specialty with the interface name. **Never** a `Port` or `UseCase` suffix, an `I`
+   prefix or an `Impl` suffix. Ports are recognised by their package, not by their name.
 4. **Each use case has its own input model** (a command). It validates itself in its constructor.
    Use a Java `record` with a compact constructor. Business rules belong in the domain model, not in the command.
 5. **Services** in `application/domain/service` implement the incoming port, orchestrate domain objects and
@@ -103,7 +107,7 @@ components and the `@SpringBootApplication` class:
    errors with `@ExceptionHandler` methods in itself (not `@RestControllerAdvice`, which would be a second stereotype).
 8. **Joining two bounded contexts of the same component.** The source context defines an outgoing port
    (`application/port/out`, in its own language and types). It is implemented by a `<Target>DomainAdapter` in
-   `adapter/out/<target-context>/`, which calls the target context's **incoming port** (`*UseCase`) directly and
+   `adapter/out/<target-context>/`, which calls the target context's **incoming port** (a use case interface) directly and
    converts the source's types to the target's command. Nothing else of the target context may be used: not its
    domain, services, outgoing ports or adapters. The source's application layer only ever sees its own port.
 9. **Joining two different components** goes through the **public API of the target component**, for example a REST
@@ -115,9 +119,9 @@ components and the `@SpringBootApplication` class:
 10. **`common`** holds utilities usable anywhere in the component (all its contexts and layers). It depends on
     neither `application` nor `adapter`. It is not shared between different components (rule 9).
 11. **Wiring of a hexagon.** A `@Configuration` class in `<hexagon>/configuration/` declares one `@Bean` per service
-    (for example `placeOrderUseCase(SaveOrderPort port)` returning `new PlaceOrderService(port)`). Adapters are created
+    (for example `orderPlacement(OrderStore store)` returning `new PlaceOrderService(store)`). Adapters are created
     in their own adapter packages (rule 7). Nothing depends on a `@Configuration` class.
-12. **Naming**: `*UseCase`, `*Port`, `*Service`, `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`, `<Target>RestAdapter` (or the technology used), `SpringData*Repository`, `<Hexagon><Kind>AdapterConfiguration`.
+12. **Naming**: interfaces as in rule 3, `*Service`, `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`, `<Target>RestAdapter` (or the technology used), `SpringData*Repository`, `<Hexagon><Kind>AdapterConfiguration`.
 
 ## 4. Java 25 guidelines
 
@@ -166,8 +170,8 @@ Mirror the book's testing split:
 
 ## 8. When adding to an existing project
 
-- Add a new use case: new `*UseCase` + command in `port/in`, service in `application/domain/service` (plus its `@Bean` in `configuration`),
-  any new `*Port` in `port/out`, then adapter changes. Never skip the port.
+- Add a new use case: new use case interface + command in `port/in`, service in `application/domain/service` (plus its `@Bean` in `configuration`),
+  any new outgoing interface in `port/out`, then adapter changes. Never skip the port.
 - Add a new bounded context: new `<component>/<context>/` package with the same internal layout. If the component had a
   single context until now, move its packages from `<component>/` into `<component>/<context>/`.
 - Connect two bounded contexts of the same component: follow rule 8 (outgoing port + `*DomainAdapter`).
