@@ -20,7 +20,7 @@ You never modify files.
      (`@Service` and `@Component` on a service are violations; `@Transactional` on a service class is a violation too, it
      belongs on methods, with `readOnly = true` for queries);
    - an `application` class importing an `adapter` class.
-   Lombok is explicitly allowed in the domain and is not a finding.
+   Lombok and JSpecify (`org.jspecify..`) are explicitly allowed in the domain and are not findings.
 2. **Ports.** Incoming ports (use cases) live in `application/port/in`;
    outgoing ports live in `application/port/out`. Each use case has its own narrow interface. Interfaces are named
    as a noun or an adjective following Java conventions (https://www.baeldung.com/java-interface-naming-conventions):

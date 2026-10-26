@@ -77,7 +77,9 @@ components and the `@SpringBootApplication` class:
    - `domain/service` may use `domain/model`, the ports and `common`, never the adapters. It is also free of
      ORM and JSON, and of Spring annotations: **no `@Service` or `@Component`**. The single exception is
      `@Transactional`, an accepted exception to the purity of the domain.
-   - **Lombok is allowed in the whole domain** (compile-time only, no runtime framework dependency).
+   - **Lombok and JSpecify are allowed in the whole domain** (compile-time annotations only, no runtime framework
+     dependency). JSpecify (`org.jspecify.annotations`) carries the null-safety contract: mark the domain and port
+     packages `@NullMarked` in a `package-info.java` and annotate the rare nullable value with `@Nullable`.
 2. **One narrow incoming port per use case** (an interface in `port/in`), named as a noun for what it offers
    (for example `OrderPlacement`, `InvoiceLookup`). Avoid "broad" service interfaces.
 3. **Outgoing ports** (interfaces in `port/out`) are named as a noun for the role they play, for example
@@ -127,6 +129,7 @@ components and the `@SpringBootApplication` class:
 
 - Records for commands, web models, value objects and IDs.
 - Lombok may be used in `application/domain` (for example on entities in `model`). Declare it as compile-only with the annotation processor configured.
+- JSpecify may be used in `application/domain` and the ports: `@NullMarked` on packages, `@Nullable` where null is a legitimate value. Add `org.jspecify:jspecify` (version managed by the Spring Boot BOM) as a regular dependency.
 - Sealed interfaces and pattern-matching `switch` for closed domain variants (for example result types).
 - `var` for obvious local types only; keep signatures explicit.
 - Do not enable preview features unless the user asks.
