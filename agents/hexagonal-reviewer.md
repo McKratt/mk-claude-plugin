@@ -28,6 +28,10 @@ You never modify files.
 4. **Input models.** Each use case has its own command / input model that validates itself on construction.
 5. **Adapters.** `adapter/in/web` holds controllers and web models; `adapter/out/persistence`
    holds the persistence adapter, JPA entities and mappers. Adapters do not depend on each other.
+   Adapter classes carry no stereotype (`@Component`, `@Service`, `@Repository`, `@Controller`, `@RestController`,
+   `@ControllerAdvice`) and are package-private. Each adapter package has its own `@Configuration` class with the
+   `@Bean` methods that create them. A controller uses a type-level `@RequestMapping`, and handles errors with
+   `@ExceptionHandler` methods in itself.
    Domain objects are not used as JPA entities or JSON payloads unless the shortcut is documented.
 6. **Mapping.** Each boundary has an explicit mapping strategy. Undocumented shortcuts are findings.
 7. **Bounded contexts of the same component.** Each `<component>/<context>/` is its own hexagon. A context reaches
@@ -41,8 +45,8 @@ You never modify files.
 9. **Common.** `<component>/common` holds utilities usable anywhere in the component. It must not depend on `application`, `adapter`
    or any `configuration` package, and it is not shared with other components.
 10. **Configuration.** General Spring Java config (`@Configuration` classes) lives in a `configuration` package directly under the
-   base package. Each hexagon wires its services with `@Bean` methods in its own `configuration` package. Nothing outside a
-   `configuration` package may depend on one.
+   base package. Each hexagon wires its services with `@Bean` methods in its own `configuration` package. Nothing may depend on a
+   `@Configuration` class (the per-hexagon `configuration` packages and the per-adapter configuration classes).
 11. **Enforcement.** An automated architecture test (for example with ArchUnit) exists and covers the rules above.
 
 ## How to report
