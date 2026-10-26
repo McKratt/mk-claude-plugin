@@ -51,6 +51,16 @@ class ArchitectureRulesDetectViolationsTest {
     }
 
     @Test
+    void anAdapterWithAStereotypeIsDetected() {
+        assertViolation(ArchitectureTest.adaptersHaveNoSpringStereotype, VIOLATIONS);
+    }
+
+    @Test
+    void aPublicAdapterIsDetected() {
+        assertViolation(ArchitectureTest.adaptersArePackagePrivate, VIOLATIONS);
+    }
+
+    @Test
     void aPortThatIsNotAnInterfaceIsDetected() {
         assertViolation(ArchitectureTest.portsAreInterfaces, VIOLATIONS);
     }

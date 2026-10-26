@@ -6,9 +6,7 @@ import com.example.shop.sales.billing.application.port.out.SaveInvoicePort;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
 
-@Component
 @RequiredArgsConstructor
 class InvoicePersistenceAdapter implements SaveInvoicePort, LoadInvoicePort {
 

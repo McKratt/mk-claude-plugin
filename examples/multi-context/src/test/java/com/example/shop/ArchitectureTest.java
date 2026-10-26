@@ -9,6 +9,8 @@ import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.stereotype.Component;
 
 @AnalyzeClasses(packages = "com.example.shop", importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
@@ -69,6 +71,25 @@ class ArchitectureTest {
     static final ArchRule nothingDependsOnConfiguration = noClasses()
             .that().resideOutsideOfPackage("com.example.shop..configuration..")
             .should().dependOnClassesThat().resideInAPackage("com.example.shop..configuration..");
+
+    // Adapters are created by @Bean methods in the adapter's own @Configuration class,
+    // so they carry no stereotype (@Component, @Service, @Repository, @Controller, @RestController...).
+    @ArchTest
+    static final ArchRule adaptersHaveNoSpringStereotype = noClasses()
+            .that().resideInAPackage("..adapter..")
+            .and().areNotAnnotatedWith(Configuration.class)
+            .should().beMetaAnnotatedWith(Component.class);
+
+    // ... which is what lets every adapter class stay package-private.
+    @ArchTest
+    static final ArchRule adaptersArePackagePrivate = classes()
+            .that().resideInAPackage("..adapter..")
+            .and().areTopLevelClasses()
+            .should().notBePublic();
+
+    @ArchTest
+    static final ArchRule nobodyDependsOnConfigurationClasses = noClasses()
+            .should().dependOnClassesThat().areAnnotatedWith(Configuration.class);
 
     @ArchTest
     static final ArchRule portsAreInterfaces = classes()

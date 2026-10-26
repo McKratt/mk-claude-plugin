@@ -3,9 +3,7 @@ package com.example.shop.sales.order.adapter.out.persistence;
 import com.example.shop.sales.order.application.domain.model.Order;
 import com.example.shop.sales.order.application.port.out.SaveOrderPort;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
 
-@Component
 @RequiredArgsConstructor
 class OrderPersistenceAdapter implements SaveOrderPort {
 

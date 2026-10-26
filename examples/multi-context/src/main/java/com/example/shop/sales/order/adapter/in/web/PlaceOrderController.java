@@ -6,13 +6,17 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.ResponseBody;
 
-@RestController
+// No @RestController: the bean is declared in the adapter's configuration class.
+// A type-level @RequestMapping is enough for Spring MVC to detect the handler.
+@ResponseBody
 @RequestMapping("/orders")
 @RequiredArgsConstructor
 class PlaceOrderController {
@@ -36,5 +40,11 @@ class PlaceOrderController {
                 .map(line -> new PlaceOrderCommand.Line(line.sku(), line.quantity()))
                 .toList());
         return new Response(placeOrderUseCase.placeOrder(command).value());
+    }
+
+    /** Self-validating commands and domain rules throw IllegalArgumentException. */
+    @ExceptionHandler(IllegalArgumentException.class)
+    ProblemDetail badRequest(IllegalArgumentException exception) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
     }
 }

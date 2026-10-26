@@ -5,13 +5,18 @@ import com.example.shop.sales.billing.application.port.in.FindInvoiceByOrderUseC
 import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.ResponseBody;
 
-@RestController
+// No @RestController: the bean is declared in the adapter's configuration class.
+// A type-level @RequestMapping is enough for Spring MVC to detect the handler.
+@ResponseBody
 @RequestMapping("/invoices")
 @RequiredArgsConstructor
 class InvoiceController {
@@ -28,5 +33,11 @@ class InvoiceController {
                         invoice.getItemCount(), invoice.getIssuedAt()))
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /** Self-validating commands and domain rules throw IllegalArgumentException. */
+    @ExceptionHandler(IllegalArgumentException.class)
+    ProblemDetail badRequest(IllegalArgumentException exception) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
     }
 }
