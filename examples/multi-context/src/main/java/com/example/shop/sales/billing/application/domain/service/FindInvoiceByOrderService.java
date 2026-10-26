@@ -8,13 +8,13 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
-@Transactional
 @RequiredArgsConstructor
 public class FindInvoiceByOrderService implements FindInvoiceByOrderUseCase {
 
     private final LoadInvoicePort loadInvoicePort;
 
     @Override
+    @Transactional(readOnly = true)
     public Optional<Invoice> findByOrder(FindInvoiceByOrderQuery query) {
         return loadInvoicePort.loadByOrderId(query.orderId());
     }

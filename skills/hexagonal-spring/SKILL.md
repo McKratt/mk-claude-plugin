@@ -85,7 +85,9 @@ components and the `@SpringBootApplication` class:
 4. **Each use case has its own input model** (a command). It validates itself in its constructor.
    Use a Java `record` with a compact constructor. Business rules belong in the domain model, not in the command.
 5. **Services** in `application/domain/service` implement the incoming port, orchestrate domain objects and
-   outgoing ports, and own the transaction boundary (`@Transactional`). They carry no stereotype annotation and are
+   outgoing ports, and own the transaction boundary: `@Transactional` goes **on the methods, never on the class**, so each
+   use case picks its own transaction (`@Transactional(readOnly = true)` for queries) instead of every public method
+   opening a read-write transaction. They carry no stereotype annotation and are
    created by `@Bean` methods (rule 11), so they are `public` with a public constructor.
 6. **Adapters own their models.** Web request/response records and JPA entities are separate from domain classes,
    with explicit mappers. Choose the mapping strategy per boundary (no mapping, two-way, full, one-way)
@@ -145,7 +147,7 @@ Mirror the book's testing split:
 - Outgoing adapters are created by `@Bean` methods in the `@Configuration` class of their adapter package (rule 7).
   Controllers (`@RestController`), JPA entities and Spring Data repositories are found by Spring Boot's scanning.
 - Services are **not** annotated: wire them with `@Bean` methods in `<hexagon>/configuration/` (rule 11).
-  `@Transactional` on services is the only Spring annotation allowed in the domain; document it in the architecture notes.
+  `@Transactional` on service methods (never on the class) is the only Spring annotation allowed in the domain; document it in the architecture notes.
 - **Multi-module option**: separate Maven/Gradle modules (`application` including its `domain` package, `adapter-web`,
   `adapter-persistence`, `bootstrap`) make illegal dependencies impossible to compile. Offer it for larger projects;
   single module plus ArchUnit is the default.

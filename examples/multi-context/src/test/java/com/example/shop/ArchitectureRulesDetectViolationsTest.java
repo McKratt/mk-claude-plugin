@@ -30,6 +30,11 @@ class ArchitectureRulesDetectViolationsTest {
     }
 
     @Test
+    void classLevelTransactionalOnAServiceIsDetected() {
+        assertViolation(ArchitectureTest.transactionalIsNeverOnAServiceClass, VIOLATIONS);
+    }
+
+    @Test
     void stereotypeOnAServiceIsDetected() {
         assertViolation(ArchitectureTest.servicesUseSpringOnlyForTransactional, VIOLATIONS);
     }

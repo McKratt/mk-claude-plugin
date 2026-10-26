@@ -17,7 +17,8 @@ You never modify files.
    - anything in `application/domain` importing an ORM (`jakarta.persistence..`, `javax.persistence..`, Hibernate and similar),
      Jackson or any JSON library;
    - `domain/service` importing an adapter, or using a Spring annotation other than `@Transactional`
-     (`@Service` and `@Component` on a service are violations);
+     (`@Service` and `@Component` on a service are violations; `@Transactional` on a service class is a violation too, it
+     belongs on methods, with `readOnly = true` for queries);
    - an `application` class importing an `adapter` class.
    Lombok is explicitly allowed in the domain and is not a finding.
 2. **Ports.** Incoming ports live in `application/port/in` and are named `*UseCase`;

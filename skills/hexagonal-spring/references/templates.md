@@ -127,8 +127,7 @@ import com.example.shop.sales.order.application.domain.model.OrderId;
 import org.springframework.transaction.annotation.Transactional;
 
 // No @Service: the bean is declared in OrderConfiguration. @Transactional is the one accepted
-// exception to the purity of the domain.
-@Transactional
+// exception to the purity of the domain. Put it on methods, never on the class, so queries can be read-only.
 public class PlaceOrderService implements PlaceOrderUseCase {
 
     private final SaveOrderPort saveOrderPort;
@@ -138,6 +137,7 @@ public class PlaceOrderService implements PlaceOrderUseCase {
     }
 
     @Override
+    @Transactional
     public OrderId placeOrder(PlaceOrderCommand command) {
         var lines = command.lines().stream()
                 .map(l -> new Order.Line(l.sku(), l.quantity()))
@@ -506,6 +506,7 @@ import com.tngtech.archunit.lang.ArchRule;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Controller;
+import org.springframework.transaction.annotation.Transactional;
 
 @AnalyzeClasses(packages = "com.example.shop", importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
@@ -540,6 +541,11 @@ class ArchitectureTest {
             .should().dependOnClassesThat(
                     resideInAPackage("org.springframework..")
                             .and(not(resideInAPackage("org.springframework.transaction.annotation"))));
+
+    @ArchTest
+    static final ArchRule transactionalIsNeverOnAServiceClass = noClasses()
+            .that().resideInAPackage("..application.domain.service..")
+            .should().beAnnotatedWith(Transactional.class);
 
     @ArchTest
     static final ArchRule commonIsIndependent = noClasses()
