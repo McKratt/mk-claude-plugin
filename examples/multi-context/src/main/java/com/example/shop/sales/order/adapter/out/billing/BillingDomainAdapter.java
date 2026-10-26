@@ -5,13 +5,11 @@ import com.example.shop.sales.order.application.port.out.CreateInvoicePort;
 import com.example.shop.sales.billing.application.port.in.CreateInvoiceCommand;
 import com.example.shop.sales.billing.application.port.in.CreateInvoiceUseCase;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
 
 /**
  * Joins the order context to the billing context of the same component: it implements order's outgoing
  * port and calls billing's incoming port directly, converting order types into billing's command.
  */
-@Component
 @RequiredArgsConstructor
 class BillingDomainAdapter implements CreateInvoicePort {
 
