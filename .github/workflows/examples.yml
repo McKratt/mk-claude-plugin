@@ -31,7 +31,13 @@ jobs:
       - run: mvn -version
       - name: Build and test (includes ArchUnit)
         working-directory: examples/${{ matrix.project }}
-        run: mvn -B -ntp verify
+        run: |
+          set -o pipefail
+          mvn -B -ntp verify 2>&1 | tee build.log || {
+            grep -E "^\[(ERROR|WARNING)\]|Tests run:.*(Failures: [1-9]|Errors: [1-9])" build.log | head -40 \
+              | while IFS= read -r l; do echo "::error::${l:0:900}"; done
+            exit 1
+          }
 
   lombok-ban:
     runs-on: ubuntu-latest
