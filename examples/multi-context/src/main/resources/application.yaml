@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: shop-multi-context
+  jpa:
+    open-in-view: false
