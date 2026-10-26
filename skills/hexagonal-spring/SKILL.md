@@ -45,7 +45,7 @@ Layout of a hexagon (`<hexagon>` = `<base>/<component>/[<context>/]`):
 │   └── port/
 │       ├── in/                  # incoming ports: *UseCase + one command per use case
 │       └── out/                 # outgoing ports: *Port
-├── adapter/                     # each adapter package also holds its own *AdapterConfiguration (rule 7)
+├── adapter/                     # outgoing adapter packages also hold their own *AdapterConfiguration (rule 7)
 │   ├── in/web/                  # controllers, web models
 │   ├── out/persistence/         # persistence adapter, JPA entities, mappers, Spring Data repositories
 │   └── out/<target-context>/    # DomainAdapter calling another bounded context of the same component (rule 8)
@@ -90,14 +90,15 @@ components and the `@SpringBootApplication` class:
 6. **Adapters own their models.** Web request/response records and JPA entities are separate from domain classes,
    with explicit mappers. Choose the mapping strategy per boundary (no mapping, two-way, full, one-way)
    and record any shortcut consciously, for example in an `ARCHITECTURE.md` or an ADR.
-7. **Adapters never depend on each other, carry no stereotype and are package-private.** No `@Component`, `@Service`,
-   `@Repository`, `@Controller` or `@RestController` on an adapter. Each adapter package holds its own
-   `@Configuration` class (named `<Hexagon><Kind>AdapterConfiguration`, for example `OrderWebAdapterConfiguration`)
-   with the `@Bean` methods that create its adapters, injecting the ports and use cases they need. Because the
-   configuration class is in the same package, every adapter class, JPA entity and Spring Data repository can stay
-   package-private. A controller needs a type-level `@RequestMapping` (and `@ResponseBody`) in place of
-   `@RestController`, and handles errors with `@ExceptionHandler` methods in itself, since `@RestControllerAdvice`
-   is a stereotype too.
+7. **Adapters never depend on each other, carry no stereotype and are package-private.** No `@Component`, `@Service`
+   or `@Repository` on an adapter. Each outgoing adapter package holds its own `@Configuration` class (named
+   `<Hexagon><Kind>AdapterConfiguration`, for example `OrderPersistenceAdapterConfiguration`) with the `@Bean`
+   methods that create its adapters, injecting the ports and use cases they need. Because the configuration class is
+   in the same package, every adapter class, JPA entity and Spring Data repository can stay package-private.
+   **Exception: controllers.** Since Spring Framework 6, MVC only detects handlers annotated with `@Controller` or
+   `@RestController` (a type-level `@RequestMapping` is not enough), so a controller keeps `@RestController`, is
+   found by component scanning and is not created in a configuration class. It is still package-private and handles
+   errors with `@ExceptionHandler` methods in itself (not `@RestControllerAdvice`, which would be a second stereotype).
 8. **Joining two bounded contexts of the same component.** The source context defines an outgoing port
    (`application/port/out`, in its own language and types). It is implemented by a `<Target>DomainAdapter` in
    `adapter/out/<target-context>/`, which calls the target context's **incoming port** (`*UseCase`) directly and
@@ -141,9 +142,8 @@ Mirror the book's testing split:
 
 ## 6. Assembly and boundaries
 
-- Adapters are created by `@Bean` methods in the `@Configuration` class of their adapter package (rule 7), found by
-  classpath scanning of the configuration classes. JPA entities and Spring Data repositories are found by Spring
-  Boot's default scanning.
+- Outgoing adapters are created by `@Bean` methods in the `@Configuration` class of their adapter package (rule 7).
+  Controllers (`@RestController`), JPA entities and Spring Data repositories are found by Spring Boot's scanning.
 - Services are **not** annotated: wire them with `@Bean` methods in `<hexagon>/configuration/` (rule 11).
   `@Transactional` on services is the only Spring annotation allowed in the domain; document it in the architecture notes.
 - **Multi-module option**: separate Maven/Gradle modules (`application` including its `domain` package, `adapter-web`,

@@ -185,9 +185,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.*;
 
-// No @RestController: the bean is declared in the adapter's configuration class.
-// A type-level @RequestMapping is enough for Spring MVC to detect the handler.
-@ResponseBody
+// The one stereotype allowed on an adapter: Spring MVC only detects @Controller / @RestController handlers.
+@RestController
 @RequestMapping("/orders")
 class PlaceOrderController {
 
@@ -221,25 +220,7 @@ class PlaceOrderController {
 }
 ```
 
-Keep error mapping as `@ExceptionHandler` methods in the controller: `@RestControllerAdvice` is a stereotype, so it
-would be picked up by component scanning.
-
-```java
-package com.example.shop.sales.order.adapter.in.web;
-
-import com.example.shop.sales.order.application.port.in.PlaceOrderUseCase;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration(proxyBeanMethods = false)
-class OrderWebAdapterConfiguration {
-
-    @Bean
-    PlaceOrderController placeOrderController(PlaceOrderUseCase placeOrderUseCase) {
-        return new PlaceOrderController(placeOrderUseCase);
-    }
-}
-```
+Keep error mapping as `@ExceptionHandler` methods in the controller: `@RestControllerAdvice` would be a second stereotype.
 
 ## Persistence adapter (`sales/order/adapter/out/persistence`)
 
@@ -524,6 +505,7 @@ import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Controller;
 
 @AnalyzeClasses(packages = "com.example.shop", importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
@@ -570,11 +552,12 @@ class ArchitectureTest {
             .that().resideInAPackage("..application..")
             .should().dependOnClassesThat().resideInAPackage("..adapter..");
 
-    // Adapters are created in their own @Configuration class: no stereotype, and package-private.
+    // Adapters are created in their own @Configuration class: no stereotype (except controllers), package-private.
     @ArchTest
     static final ArchRule adaptersHaveNoSpringStereotype = noClasses()
             .that().resideInAPackage("..adapter..")
             .and().areNotAnnotatedWith(Configuration.class)
+            .and().areNotMetaAnnotatedWith(Controller.class)
             .should().beMetaAnnotatedWith(Component.class);
 
     @ArchTest
