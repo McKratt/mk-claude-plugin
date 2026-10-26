@@ -131,6 +131,7 @@ components and the `@SpringBootApplication` class:
 - `var` for obvious local types only; keep signatures explicit.
 - Do not enable preview features unless the user asks.
 - Set the Java release to 25 in the build file and use a JDK 25 toolchain.
+- Application configuration is YAML: `src/main/resources/application.yaml`, never `application.properties`.
 
 For the Spring Boot version, use the latest stable release that supports Java 25 and confirm it on
 https://start.spring.io rather than relying on memory.

@@ -484,6 +484,13 @@ class OrderShippingRestAdapterConfiguration {
 }
 ```
 
+The base URL comes from `application.yaml`:
+
+```yaml
+shipping:
+  base-url: https://shipping.example.com
+```
+
 The path, payload and base URL above are placeholders: use the real contract published by the target component.
 Keep the `RestClient` details, error mapping and retries inside this adapter.
 
