@@ -438,7 +438,6 @@ Add `com.tngtech.archunit:archunit-junit5` with test scope, using the latest rel
 package com.example.shop;
 
 import static com.tngtech.archunit.base.DescribedPredicate.not;
-import static com.tngtech.archunit.core.domain.JavaClass.Predicates.equivalentTo;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
@@ -475,12 +474,13 @@ class ArchitectureTest {
             .that().resideInAPackage("..application.domain.service..")
             .should().dependOnClassesThat().resideInAPackage("..adapter..");
 
-    // @Service and @Component are forbidden on services; @Transactional is the only Spring type allowed.
+    // @Service and @Component are forbidden on services; only @Transactional (with its Propagation/Isolation members) is allowed.
     @ArchTest
     static final ArchRule servicesUseSpringOnlyForTransactional = noClasses()
             .that().resideInAPackage("..application.domain.service..")
             .should().dependOnClassesThat(
-                    resideInAPackage("org.springframework..").and(not(equivalentTo(Transactional.class))));
+                    resideInAPackage("org.springframework..")
+                            .and(not(resideInAPackage("org.springframework.transaction.annotation"))));
 
     @ArchTest
     static final ArchRule commonIsIndependent = noClasses()
