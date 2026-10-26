@@ -21,9 +21,10 @@ You never modify files.
      belongs on methods, with `readOnly = true` for queries);
    - an `application` class importing an `adapter` class.
    Lombok is explicitly allowed in the domain and is not a finding.
-2. **Ports.** Incoming ports live in `application/port/in` and are named `*UseCase`;
-   outgoing ports live in `application/port/out` and are named `*Port`. Each use case has
-   its own narrow interface.
+2. **Ports.** Incoming ports (use cases) live in `application/port/in`;
+   outgoing ports live in `application/port/out`. Each use case has its own narrow interface. Interfaces are named
+   as a noun or an adjective following Java conventions (https://www.baeldung.com/java-interface-naming-conventions):
+   a `Port` or `UseCase` suffix, an `I` prefix or an `Impl` suffix is a violation.
 3. **Services.** Classes in `application/domain/service` implement incoming ports and use outgoing ports.
    They contain orchestration, not HTTP or persistence details, and are public so they can be wired with `@Bean`.
 4. **Input models.** Each use case has its own command / input model that validates itself on construction.
@@ -37,7 +38,7 @@ You never modify files.
 6. **Mapping.** Each boundary has an explicit mapping strategy. Undocumented shortcuts are findings.
 7. **Bounded contexts of the same component.** Each `<component>/<context>/` is its own hexagon. A context reaches
    another context of the same component only through an outgoing port of its own, implemented by a
-   `*DomainAdapter` in `adapter/out/<target-context>/` that uses the target's incoming port (`*UseCase` and its command)
+   `*DomainAdapter` in `adapter/out/<target-context>/` that uses the target's incoming port (the use case interface and its command)
    and nothing else of the target (no domain, services, outgoing ports or adapters). Anything else is a violation.
    A component with a single bounded context omits the context level in its package names.
 8. **Different components.** Components share no classes. A component reaches another only through the target's
