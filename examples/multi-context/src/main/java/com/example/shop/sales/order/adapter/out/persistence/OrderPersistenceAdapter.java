@@ -1,11 +1,11 @@
 package com.example.shop.sales.order.adapter.out.persistence;
 
 import com.example.shop.sales.order.application.domain.model.Order;
-import com.example.shop.sales.order.application.port.out.SaveOrderPort;
+import com.example.shop.sales.order.application.port.out.OrderStore;
 import lombok.RequiredArgsConstructor;
 
 @RequiredArgsConstructor
-class OrderPersistenceAdapter implements SaveOrderPort {
+class OrderPersistenceAdapter implements OrderStore {
 
     private final SpringDataOrderRepository repository;
 

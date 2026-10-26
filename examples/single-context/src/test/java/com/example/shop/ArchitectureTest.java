@@ -104,8 +104,23 @@ class ArchitectureTest {
 
     @ArchTest
     static final ArchRule portsAreInterfaces = classes()
-            .that().haveSimpleNameEndingWith("Port").or().haveSimpleNameEndingWith("UseCase")
+            .that().resideInAPackage("..application.port..")
+            .and().areNotAssignableTo(Record.class)
             .should().beInterfaces();
+
+    // Interface names follow the usual Java conventions (https://www.baeldung.com/java-interface-naming-conventions):
+    // a noun or an adjective, no "I" prefix, no "Impl" suffix, and no Port / UseCase suffix.
+    @ArchTest
+    static final ArchRule interfaceNamesFollowJavaConventions = noClasses()
+            .that().areInterfaces()
+            .should().haveSimpleNameEndingWith("Port")
+            .orShould().haveSimpleNameEndingWith("UseCase")
+            .orShould().haveSimpleNameEndingWith("Impl")
+            .orShould().haveNameMatching(".*[.]I[A-Z][^.]*");
+
+    @ArchTest
+    static final ArchRule noImplSuffixOnClasses = noClasses()
+            .should().haveSimpleNameEndingWith("Impl");
 
 
 }

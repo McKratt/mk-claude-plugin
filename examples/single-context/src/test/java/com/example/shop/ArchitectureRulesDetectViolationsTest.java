@@ -66,6 +66,16 @@ class ArchitectureRulesDetectViolationsTest {
     }
 
     @Test
+    void portSuffixAndIPrefixAreDetected() {
+        assertViolation(ArchitectureTest.interfaceNamesFollowJavaConventions, VIOLATIONS);
+    }
+
+    @Test
+    void implSuffixIsDetected() {
+        assertViolation(ArchitectureTest.noImplSuffixOnClasses, VIOLATIONS);
+    }
+
+    @Test
     void aPortThatIsNotAnInterfaceIsDetected() {
         assertViolation(ArchitectureTest.portsAreInterfaces, VIOLATIONS);
     }
