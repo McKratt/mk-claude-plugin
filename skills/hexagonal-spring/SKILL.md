@@ -45,7 +45,7 @@ Layout of a hexagon (`<hexagon>` = `<base>/<component>/[<context>/]`):
 │   └── port/
 │       ├── in/                  # incoming ports: *UseCase + one command per use case
 │       └── out/                 # outgoing ports: *Port
-├── adapter/
+├── adapter/                     # each adapter package also holds its own *AdapterConfiguration (rule 7)
 │   ├── in/web/                  # controllers, web models
 │   ├── out/persistence/         # persistence adapter, JPA entities, mappers, Spring Data repositories
 │   └── out/<target-context>/    # DomainAdapter calling another bounded context of the same component (rule 8)
@@ -90,8 +90,14 @@ components and the `@SpringBootApplication` class:
 6. **Adapters own their models.** Web request/response records and JPA entities are separate from domain classes,
    with explicit mappers. Choose the mapping strategy per boundary (no mapping, two-way, full, one-way)
    and record any shortcut consciously, for example in an `ARCHITECTURE.md` or an ADR.
-7. **Adapters never depend on each other.** Spring Data repositories and JPA entities stay package-private
-   inside the persistence adapter package where possible.
+7. **Adapters never depend on each other, carry no stereotype and are package-private.** No `@Component`, `@Service`,
+   `@Repository`, `@Controller` or `@RestController` on an adapter. Each adapter package holds its own
+   `@Configuration` class (named `<Hexagon><Kind>AdapterConfiguration`, for example `OrderWebAdapterConfiguration`)
+   with the `@Bean` methods that create its adapters, injecting the ports and use cases they need. Because the
+   configuration class is in the same package, every adapter class, JPA entity and Spring Data repository can stay
+   package-private. A controller needs a type-level `@RequestMapping` (and `@ResponseBody`) in place of
+   `@RestController`, and handles errors with `@ExceptionHandler` methods in itself, since `@RestControllerAdvice`
+   is a stereotype too.
 8. **Joining two bounded contexts of the same component.** The source context defines an outgoing port
    (`application/port/out`, in its own language and types). It is implemented by a `<Target>DomainAdapter` in
    `adapter/out/<target-context>/`, which calls the target context's **incoming port** (`*UseCase`) directly and
@@ -100,15 +106,15 @@ components and the `@SpringBootApplication` class:
 9. **Joining two different components** goes through the **public API of the target component**, for example a REST
    service, but it can be another technology (messaging, gRPC...). The source defines an outgoing port in its
    `application/port/out`, implemented by an adapter in `adapter/out/<target-component>/` (for example
-   `<Target>RestAdapter`) that calls the target's public API and maps the response to the source's own model.
+   `<Target>RestAdapter`) that calls the target's public API and maps the response to the source's own model. Like every adapter, it is
+   created by a `@Configuration` class in its package (rule 7).
    There is **no compile-time dependency** between the two components. If the API technology is not stated, ask the user.
 10. **`common`** holds utilities usable anywhere in the component (all its contexts and layers). It depends on
     neither `application` nor `adapter`. It is not shared between different components (rule 9).
 11. **Wiring of a hexagon.** A `@Configuration` class in `<hexagon>/configuration/` declares one `@Bean` per service
-    (for example `placeOrderUseCase(SaveOrderPort port)` returning `new PlaceOrderService(port)`). Adapters keep
-    their `@Component` / `@RestController` annotations and are found by component scanning. Nothing in
-    `application` or `adapter` depends on `configuration`.
-12. **Naming**: `*UseCase`, `*Port`, `*Service`, `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`, `<Target>RestAdapter` (or the technology used), `SpringData*Repository`.
+    (for example `placeOrderUseCase(SaveOrderPort port)` returning `new PlaceOrderService(port)`). Adapters are created
+    in their own adapter packages (rule 7). Nothing depends on a `@Configuration` class.
+12. **Naming**: `*UseCase`, `*Port`, `*Service`, `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`, `<Target>RestAdapter` (or the technology used), `SpringData*Repository`, `<Hexagon><Kind>AdapterConfiguration`.
 
 ## 4. Java 25 guidelines
 
@@ -135,7 +141,9 @@ Mirror the book's testing split:
 
 ## 6. Assembly and boundaries
 
-- Adapters are found by Spring classpath scanning (`@RestController`, `@Component`).
+- Adapters are created by `@Bean` methods in the `@Configuration` class of their adapter package (rule 7), found by
+  classpath scanning of the configuration classes. JPA entities and Spring Data repositories are found by Spring
+  Boot's default scanning.
 - Services are **not** annotated: wire them with `@Bean` methods in `<hexagon>/configuration/` (rule 11).
   `@Transactional` on services is the only Spring annotation allowed in the domain; document it in the architecture notes.
 - **Multi-module option**: separate Maven/Gradle modules (`application` including its `domain` package, `adapter-web`,

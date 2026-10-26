@@ -182,9 +182,12 @@ import com.example.shop.sales.order.application.port.in.PlaceOrderUseCase;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.*;
 
-@RestController
+// No @RestController: the bean is declared in the adapter's configuration class.
+// A type-level @RequestMapping is enough for Spring MVC to detect the handler.
+@ResponseBody
 @RequestMapping("/orders")
 class PlaceOrderController {
 
@@ -209,10 +212,34 @@ class PlaceOrderController {
                         .toList());
         return new Response(placeOrderUseCase.placeOrder(command).value());
     }
+
+    /** Self-validating commands throw IllegalArgumentException: answer HTTP 400. */
+    @ExceptionHandler(IllegalArgumentException.class)
+    ProblemDetail badRequest(IllegalArgumentException exception) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+    }
 }
 ```
 
-Map `IllegalArgumentException` from command validation to HTTP 400 with a `@RestControllerAdvice` in this package.
+Keep error mapping as `@ExceptionHandler` methods in the controller: `@RestControllerAdvice` is a stereotype, so it
+would be picked up by component scanning.
+
+```java
+package com.example.shop.sales.order.adapter.in.web;
+
+import com.example.shop.sales.order.application.port.in.PlaceOrderUseCase;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration(proxyBeanMethods = false)
+class OrderWebAdapterConfiguration {
+
+    @Bean
+    PlaceOrderController placeOrderController(PlaceOrderUseCase placeOrderUseCase) {
+        return new PlaceOrderController(placeOrderUseCase);
+    }
+}
+```
 
 ## Persistence adapter (`sales/order/adapter/out/persistence`)
 
@@ -276,9 +303,6 @@ package com.example.shop.sales.order.adapter.out.persistence;
 
 import com.example.shop.sales.order.application.port.out.SaveOrderPort;
 import com.example.shop.sales.order.application.domain.model.Order;
-import org.springframework.stereotype.Component;
-
-@Component
 class OrderPersistenceAdapter implements SaveOrderPort {
 
     private final SpringDataOrderRepository repository;
@@ -300,6 +324,26 @@ class OrderPersistenceAdapter implements SaveOrderPort {
     }
 }
 ```
+
+```java
+package com.example.shop.sales.order.adapter.out.persistence;
+
+import com.example.shop.sales.order.application.port.out.SaveOrderPort;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration(proxyBeanMethods = false)
+class OrderPersistenceAdapterConfiguration {
+
+    @Bean
+    SaveOrderPort saveOrderPort(SpringDataOrderRepository repository) {
+        return new OrderPersistenceAdapter(repository);
+    }
+}
+```
+
+JPA entities and Spring Data repositories are not stereotype beans: Spring Boot finds them by scanning from the
+`@SpringBootApplication` package, so they stay package-private as well.
 
 Move mapping into a dedicated `OrderMapper` class once it grows (add `toDomain` for load ports).
 
@@ -357,9 +401,7 @@ import com.example.shop.sales.billing.application.port.in.CreateInvoiceCommand;
 import com.example.shop.sales.billing.application.port.in.CreateInvoiceUseCase;
 import com.example.shop.sales.order.application.domain.model.Order;
 import com.example.shop.sales.order.application.port.out.CreateInvoicePort;
-import org.springframework.stereotype.Component;
 
-@Component
 class BillingDomainAdapter implements CreateInvoicePort {
 
     private final CreateInvoiceUseCase createInvoiceUseCase;
@@ -372,6 +414,24 @@ class BillingDomainAdapter implements CreateInvoicePort {
     public void createInvoiceFor(Order order) {
         int itemCount = order.lines().stream().mapToInt(Order.Line::quantity).sum();
         createInvoiceUseCase.createInvoice(new CreateInvoiceCommand(order.id().value(), itemCount));
+    }
+}
+```
+
+```java
+package com.example.shop.sales.order.adapter.out.billing;
+
+import com.example.shop.sales.billing.application.port.in.CreateInvoiceUseCase;
+import com.example.shop.sales.order.application.port.out.CreateInvoicePort;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration(proxyBeanMethods = false)
+class OrderBillingDomainAdapterConfiguration {
+
+    @Bean
+    CreateInvoicePort createInvoicePort(CreateInvoiceUseCase createInvoiceUseCase) {
+        return new BillingDomainAdapter(createInvoiceUseCase);
     }
 }
 ```
@@ -400,11 +460,8 @@ package com.example.shop.sales.order.adapter.out.shipping;
 import com.example.shop.sales.order.application.domain.model.Order;
 import com.example.shop.sales.order.application.port.out.RequestShipmentPort;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
-@Component
 class ShippingRestAdapter implements RequestShipmentPort {
 
     // Shape of the request expected by the shipping API, owned by this adapter.
@@ -412,8 +469,8 @@ class ShippingRestAdapter implements RequestShipmentPort {
 
     private final RestClient restClient;
 
-    ShippingRestAdapter(RestClient.Builder builder, @Value("${shipping.base-url}") String baseUrl) {
-        this.restClient = builder.baseUrl(baseUrl).build();
+    ShippingRestAdapter(RestClient restClient) {
+        this.restClient = restClient;
     }
 
     @Override
@@ -423,6 +480,25 @@ class ShippingRestAdapter implements RequestShipmentPort {
                 .body(new ShipmentRequest(order.id().value()))
                 .retrieve()
                 .toBodilessEntity();
+    }
+}
+```
+
+```java
+package com.example.shop.sales.order.adapter.out.shipping;
+
+import com.example.shop.sales.order.application.port.out.RequestShipmentPort;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.client.RestClient;
+
+@Configuration(proxyBeanMethods = false)
+class OrderShippingRestAdapterConfiguration {
+
+    @Bean
+    RequestShipmentPort requestShipmentPort(RestClient.Builder builder, @Value("${shipping.base-url}") String baseUrl) {
+        return new ShippingRestAdapter(builder.baseUrl(baseUrl).build());
     }
 }
 ```
@@ -446,6 +522,8 @@ import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.stereotype.Component;
 
 @AnalyzeClasses(packages = "com.example.shop", importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
@@ -491,6 +569,23 @@ class ArchitectureTest {
     static final ArchRule applicationDoesNotDependOnAdapters = noClasses()
             .that().resideInAPackage("..application..")
             .should().dependOnClassesThat().resideInAPackage("..adapter..");
+
+    // Adapters are created in their own @Configuration class: no stereotype, and package-private.
+    @ArchTest
+    static final ArchRule adaptersHaveNoSpringStereotype = noClasses()
+            .that().resideInAPackage("..adapter..")
+            .and().areNotAnnotatedWith(Configuration.class)
+            .should().beMetaAnnotatedWith(Component.class);
+
+    @ArchTest
+    static final ArchRule adaptersArePackagePrivate = classes()
+            .that().resideInAPackage("..adapter..")
+            .and().areTopLevelClasses()
+            .should().notBePublic();
+
+    @ArchTest
+    static final ArchRule nobodyDependsOnConfigurationClasses = noClasses()
+            .should().dependOnClassesThat().areAnnotatedWith(Configuration.class);
 
     @ArchTest
     static final ArchRule inboundAdaptersDoNotUseOutboundAdapters = noClasses()
