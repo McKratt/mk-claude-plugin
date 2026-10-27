@@ -76,6 +76,11 @@ class ArchitectureRulesDetectViolationsTest {
     }
 
     @Test
+    void should_detect_a_violation_when_a_raw_http_client_is_used() {
+        assertViolation(ArchitectureTest.noRawHttpClient, VIOLATIONS);
+    }
+
+    @Test
     void should_detect_a_violation_when_a_port_is_not_an_interface() {
         assertViolation(ArchitectureTest.portsAreInterfaces, VIOLATIONS);
     }
