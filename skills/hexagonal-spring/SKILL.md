@@ -17,7 +17,6 @@ Ask only for what is missing, in one short message:
 
 - Group ID, artifact ID and **base package** (for example `com.example.shop`)
 - **Component** name (for example `sales`) and its first **bounded context** name (for example `order`)
-- Build tool: Maven (default) or Gradle (the templates and the test setup are written for Maven; translate them for Gradle)
 - Persistence: Spring Data JPA (default), none, or other
 - Single module (default) or multi-module (see section 6)
 
@@ -175,7 +174,7 @@ Complement with, in this order of importance:
   Controllers (`@RestController`), JPA entities and Spring Data repositories are found by Spring Boot's scanning.
 - Services are **not** annotated: wire them with `@Bean` methods in `<hexagon>/configuration/` (rule 11).
   `@Transactional` on service methods (never on the class) is the only Spring annotation allowed in the domain; document it in the architecture notes.
-- **Multi-module option**: separate Maven/Gradle modules (`application` including its `domain` package, `adapter-web`,
+- **Multi-module option**: separate Maven modules (`application` including its `domain` package, `adapter-web`,
   `adapter-persistence`, `bootstrap`) make illegal dependencies impossible to compile. Offer it for larger projects;
   single module plus ArchUnit is the default.
 
@@ -188,7 +187,7 @@ Complement with, in this order of importance:
    (use case, command, service, outgoing port, web adapter, persistence adapter, mappers).
 4. Add the ArchUnit test and its dependency (latest release on Maven Central).
 5. Add the use case integration tests (`*IT`, Testcontainers, WireMock) and the domain unit tests following section 5.
-6. Run the build (`./mvnw verify` or `./gradlew build`; Docker must be running for Testcontainers) and fix failures.
+6. Run the build (`./mvnw verify`; Docker must be running for Testcontainers) and fix failures.
 7. Report: the package tree, the shortcuts taken, and what remains to implement.
 
 ## 8. When adding to an existing project
