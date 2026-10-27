@@ -9,14 +9,19 @@ Two runnable Spring Boot 4.1 / Java 25 projects that follow the `hexagonal-sprin
 
 ## Run
 
-Requires JDK 25 and Maven 3.10+ (enforced by maven-enforcer).
+Requires JDK 25, Maven 3.10+ (enforced by maven-enforcer) and a running Docker daemon (Testcontainers starts PostgreSQL).
 
 ```bash
 cd examples/single-context   # or multi-context
 mvn verify
 ```
 
-`verify` runs the unit tests, the `@SpringBootTest` system test and the ArchUnit rules.
+Two kinds of tests, two Maven phases:
+
+- `*Test` (surefire, `test` phase): fast tests without a web server, namely the domain and service unit tests and the ArchUnit rules.
+- `*IT` (failsafe, `integration-test` phase): `@SpringBootTest` tests that start the web server and test a whole use
+  case against a real PostgreSQL in a container (Testcontainers). `single-context` also replaces the third-party shipping API
+  with WireMock (`PlaceOrderIT`).
 `ArchitectureRulesDetectViolationsTest` feeds deliberately bad fixture classes (in test sources, package `archfixtures`)
 to the rules, so a rule that silently stops matching makes the build fail.
 

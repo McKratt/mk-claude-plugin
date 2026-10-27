@@ -4,6 +4,7 @@ import com.example.shop.sales.application.domain.model.Order;
 import com.example.shop.sales.application.domain.model.OrderId;
 import com.example.shop.sales.application.port.in.PlaceOrderCommand;
 import com.example.shop.sales.application.port.in.OrderPlacement;
+import com.example.shop.sales.application.port.out.ShipmentRequester;
 import com.example.shop.sales.application.port.out.OrderStore;
 import java.time.Clock;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PlaceOrderService implements OrderPlacement {
 
     private final OrderStore orderStore;
+    private final ShipmentRequester shipmentRequester;
     private final Clock clock;
 
     @Override
@@ -26,6 +28,7 @@ public class PlaceOrderService implements OrderPlacement {
                 .toList();
         var order = Order.place(lines, clock.instant());
         orderStore.save(order);
+        shipmentRequester.requestShipmentFor(order);
         return order.getId();
     }
 }
