@@ -5,9 +5,9 @@ so the context level is omitted from the packages (`com.example.shop.sales.appli
 insert it: `com.example.shop.sales.order.application...`. Utilities usable anywhere in the component go in
 `com.example.shop.sales.common`. Replace names to fit the user's domain.
 
-Every Java file below is copied from `examples/helidon-single-context/` of this plugin's repository, which CI builds
-and tests (`mvn verify`, Java 25, Helidon 4.5.6, PostgreSQL in Testcontainers, WireMock). Only the sections marked
-*not in the example* were not run.
+Every Java file below is copied from `examples/helidon-single-context/` or, for the section on joining bounded
+contexts, `examples/helidon-multi-context/` of this plugin's repository, which CI builds and tests (`mvn verify`,
+Java 25, Helidon 4.5.6, PostgreSQL in Testcontainers, WireMock).
 
 ## Build (`pom.xml`)
 
@@ -905,10 +905,14 @@ public final class ShopApplication {
 }
 ```
 
-## Joining two bounded contexts of the same component (`DomainAdapter`) — *not in the example*
+## Joining two bounded contexts of the same component (`DomainAdapter`)
 
-Component `sales` with contexts `order` and `billing`: when an order is placed, `order` asks `billing` to create an
-invoice. `order` defines its own outgoing port; the adapter calls `billing`'s incoming port and nothing else of it.
+From `examples/helidon-multi-context/`: component `sales` with contexts `order` and `billing`. When an order is placed,
+`order` asks `billing` to create the invoice, in the same transaction. The packages gain the context level
+(`com.example.shop.sales.order...`, `com.example.shop.sales.billing...`); domain, commands and ports are written as in
+the slice above.
+
+`order` defines its own outgoing port; the adapter calls `billing`'s incoming port and nothing else of it:
 
 ```java
 // sales/order/application/port/out/InvoiceIssuer.java
@@ -918,7 +922,7 @@ import com.example.shop.sales.order.application.domain.model.Order;
 
 public interface InvoiceIssuer {
 
-    void issueInvoiceFor(Order order);
+    void createInvoiceFor(Order order);
 }
 ```
 
@@ -932,14 +936,17 @@ import com.example.shop.sales.order.application.domain.model.Order;
 import com.example.shop.sales.order.application.port.out.InvoiceIssuer;
 import lombok.RequiredArgsConstructor;
 
-/** Translates order's language into billing's command; uses billing's incoming port only. */
+/**
+ * Joins the order context to the billing context of the same component: it implements order's outgoing
+ * port and calls billing's incoming port directly, converting order types into billing's command.
+ */
 @RequiredArgsConstructor
 class BillingDomainAdapter implements InvoiceIssuer {
 
     private final InvoiceCreation invoiceCreation;
 
     @Override
-    public void issueInvoiceFor(Order order) {
+    public void createInvoiceFor(Order order) {
         int itemCount = order.getLines().stream().mapToInt(Order.Line::quantity).sum();
         invoiceCreation.createInvoice(new CreateInvoiceCommand(order.getId().value(), itemCount));
     }
@@ -958,15 +965,426 @@ public final class OrderBillingDomainAdapterConfiguration {
     private OrderBillingDomainAdapterConfiguration() {
     }
 
+    /** @param invoiceCreation billing's incoming port, created by billing's configuration */
     public static InvoiceIssuer invoiceIssuer(InvoiceCreation invoiceCreation) {
         return new BillingDomainAdapter(invoiceCreation);
     }
 }
 ```
 
-The component wires the target context first and hands its use case to the source context. Both contexts can share
-one `DbClient` and `TransactionRunner` (create them once in the component's assembly) so that a call across contexts
-joins the caller's transaction (`DbClientTransactionRunner` runs nested work in the open transaction).
+### One transaction across contexts (`sales/common/persistence`)
+
+The thread-bound transaction moves from the persistence adapter to the component's `common/persistence`, so that
+billing's `CreateInvoiceService` joins the transaction opened by order's `PlaceOrderService`. Each context keeps its
+own `TransactionRunner` port (same code as in the slice) and a thin adapter:
+
+```java
+// sales/common/persistence/DbTransactions.java
+package com.example.shop.sales.common.persistence;
+
+import io.helidon.config.Config;
+import io.helidon.dbclient.DbClient;
+import io.helidon.dbclient.DbExecute;
+import io.helidon.dbclient.DbTransaction;
+import java.util.function.Supplier;
+
+/**
+ * One DbClient for the whole component, with the open transaction bound to the current thread (Helidon serves
+ * each request on its own virtual thread). The persistence adapters of every bounded context run their
+ * statements on {@link #executor()}, so a use case of one context that calls another context through a
+ * DomainAdapter keeps a single transaction. Only persistence adapters and configuration classes may use it.
+ */
+public final class DbTransactions {
+
+    private final DbClient dbClient;
+    private final ThreadLocal<DbTransaction> current = new ThreadLocal<>();
+
+    private DbTransactions(DbClient dbClient) {
+        this.dbClient = dbClient;
+    }
+
+    /** @param dbConfig the {@code db} node of the configuration (DbClient settings) */
+    public static DbTransactions create(Config dbConfig) {
+        return new DbTransactions(DbClient.create(dbConfig));
+    }
+
+    /** Runs the work in the open transaction, or in a new one that commits when it returns and rolls back when it throws. */
+    public <T> T inTransaction(Supplier<T> work) {
+        if (current.get() != null) {
+            return work.get();
+        }
+        var transaction = dbClient.transaction();
+        current.set(transaction);
+        try {
+            T result = work.get();
+            transaction.commit();
+            return result;
+        } catch (RuntimeException | Error e) {
+            try {
+                transaction.rollback();
+            } catch (RuntimeException rollbackFailure) {
+                // A failed statement already closed the connection (the pool then discards the work):
+                // keep the original failure visible.
+                e.addSuppressed(rollbackFailure);
+            }
+            throw e;
+        } finally {
+            current.remove();
+        }
+    }
+
+    /** The current transaction, or a non-transactional executor outside of one. */
+    public DbExecute executor() {
+        var transaction = current.get();
+        return transaction != null ? transaction : dbClient.execute();
+    }
+}
+```
+
+```java
+// sales/billing/adapter/out/persistence/DbClientTransactionRunner.java
+package com.example.shop.sales.billing.adapter.out.persistence;
+
+import com.example.shop.sales.common.persistence.DbTransactions;
+import com.example.shop.sales.billing.application.port.out.TransactionRunner;
+import java.util.function.Supplier;
+import lombok.RequiredArgsConstructor;
+
+/** The billing context's transaction port, backed by the component's shared {@link DbTransactions}. */
+@RequiredArgsConstructor
+class DbClientTransactionRunner implements TransactionRunner {
+
+    private final DbTransactions dbTransactions;
+
+    @Override
+    public <T> T inTransaction(Supplier<T> work) {
+        return dbTransactions.inTransaction(work);
+    }
+}
+```
+
+```java
+// sales/billing/application/domain/service/CreateInvoiceService.java
+package com.example.shop.sales.billing.application.domain.service;
+
+import com.example.shop.sales.billing.application.domain.model.Invoice;
+import com.example.shop.sales.billing.application.port.in.CreateInvoiceCommand;
+import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
+import com.example.shop.sales.billing.application.port.out.InvoiceStore;
+import com.example.shop.sales.billing.application.port.out.TransactionRunner;
+import java.time.Clock;
+import lombok.RequiredArgsConstructor;
+
+@RequiredArgsConstructor
+public class CreateInvoiceService implements InvoiceCreation {
+
+    private final InvoiceStore invoiceStore;
+    private final TransactionRunner transactionRunner;
+    private final Clock clock;
+
+    @Override
+    public void createInvoice(CreateInvoiceCommand command) {
+        transactionRunner.inTransaction(() -> {
+            invoiceStore.save(Invoice.issue(command.orderId(), command.itemCount(), clock.instant()));
+            return null;
+        });
+    }
+}
+```
+
+### One schema per context
+
+Each context migrates its own schema with its own Flyway history; the SQL names the schema, and no foreign key
+crosses contexts. Reading a row: `UUID` and `TIMESTAMP WITH TIME ZONE` are read as `String` and `java.sql.Timestamp`.
+
+```java
+// sales/billing/adapter/out/persistence/BillingPersistenceAdapterConfiguration.java
+package com.example.shop.sales.billing.adapter.out.persistence;
+
+import com.example.shop.sales.billing.application.port.out.InvoiceFinder;
+import com.example.shop.sales.billing.application.port.out.InvoiceStore;
+import com.example.shop.sales.billing.application.port.out.TransactionRunner;
+import com.example.shop.sales.common.persistence.DbTransactions;
+import io.helidon.config.Config;
+import org.flywaydb.core.Flyway;
+
+/**
+ * The only public class of the package: it creates the persistence adapters of the billing context, which stay
+ * package-private, and hands them out as ports. Used only by the context's configuration class.
+ */
+public final class BillingPersistenceAdapterConfiguration {
+
+    private final InvoicePersistenceAdapter invoicePersistenceAdapter;
+    private final DbClientTransactionRunner transactionRunner;
+
+    /**
+     * @param dbConfig       the {@code db} node of the configuration, for the schema migration
+     * @param dbTransactions the component's shared DbClient
+     */
+    public BillingPersistenceAdapterConfiguration(Config dbConfig, DbTransactions dbTransactions) {
+        migrate(dbConfig.get("connection"));
+        invoicePersistenceAdapter = new InvoicePersistenceAdapter(dbTransactions);
+        transactionRunner = new DbClientTransactionRunner(dbTransactions);
+    }
+
+    public InvoiceStore invoiceStore() {
+        return invoicePersistenceAdapter;
+    }
+
+    public InvoiceFinder invoiceFinder() {
+        return invoicePersistenceAdapter;
+    }
+
+    public TransactionRunner transactionRunner() {
+        return transactionRunner;
+    }
+
+    /** The context owns its schema (sales_billing) and its own Flyway history in it. */
+    private static void migrate(Config connection) {
+        Flyway.configure()
+                .dataSource(connection.get("url").asString().get(),
+                        connection.get("username").asString().get(),
+                        connection.get("password").asString().get())
+                .schemas("sales_billing")
+                .locations("classpath:db/migration/billing")
+                .load()
+                .migrate();
+    }
+}
+```
+
+```java
+// sales/billing/adapter/out/persistence/InvoicePersistenceAdapter.java
+package com.example.shop.sales.billing.adapter.out.persistence;
+
+import com.example.shop.sales.billing.application.domain.model.Invoice;
+import com.example.shop.sales.billing.application.port.out.InvoiceFinder;
+import com.example.shop.sales.billing.application.port.out.InvoiceStore;
+import com.example.shop.sales.common.persistence.DbTransactions;
+import io.helidon.dbclient.DbRow;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.Optional;
+import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+
+/** Maps invoices to the billing context's schema. DbClient binds a UUID as a string, hence the explicit casts. */
+@RequiredArgsConstructor
+class InvoicePersistenceAdapter implements InvoiceStore, InvoiceFinder {
+
+    private final DbTransactions dbTransactions;
+
+    @Override
+    public void save(Invoice invoice) {
+        dbTransactions.executor().insert(
+                "INSERT INTO sales_billing.invoices (id, order_id, item_count, issued_at)"
+                        + " VALUES (CAST(? AS UUID), CAST(? AS UUID), ?, ?)",
+                invoice.getId(), invoice.getOrderId(), invoice.getItemCount(),
+                OffsetDateTime.ofInstant(invoice.getIssuedAt(), ZoneOffset.UTC));
+    }
+
+    @Override
+    public Optional<Invoice> loadByOrderId(UUID orderId) {
+        return dbTransactions.executor()
+                .get("SELECT CAST(id AS VARCHAR) AS id, item_count, issued_at FROM sales_billing.invoices"
+                        + " WHERE order_id = CAST(? AS UUID)", orderId)
+                .map(row -> toInvoice(row, orderId));
+    }
+
+    private static Invoice toInvoice(DbRow row, UUID orderId) {
+        return Invoice.restore(
+                UUID.fromString(row.column("id").get(String.class)),
+                orderId,
+                row.column("item_count").get(Integer.class),
+                row.column("issued_at").get(java.sql.Timestamp.class).toInstant());
+    }
+}
+```
+
+```sql
+-- src/main/resources/db/migration/billing/V1__create_invoices.sql
+-- No foreign key to sales_order: the billing context does not depend on the order context's tables.
+CREATE TABLE invoices (
+    id         UUID PRIMARY KEY,
+    order_id   UUID                     NOT NULL UNIQUE,
+    item_count INTEGER                  NOT NULL,
+    issued_at  TIMESTAMP WITH TIME ZONE NOT NULL
+);
+```
+
+### Wiring: target context first
+
+Each context's configuration is an instance class; the component's configuration creates `billing` before `order`
+and hands billing's incoming port to order:
+
+```java
+// sales/billing/configuration/BillingConfiguration.java
+package com.example.shop.sales.billing.configuration;
+
+import com.example.shop.sales.billing.adapter.in.web.BillingWebAdapterConfiguration;
+import com.example.shop.sales.billing.adapter.out.persistence.BillingPersistenceAdapterConfiguration;
+import com.example.shop.sales.billing.application.domain.service.CreateInvoiceService;
+import com.example.shop.sales.billing.application.domain.service.FindInvoiceByOrderService;
+import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
+import com.example.shop.sales.billing.application.port.in.InvoiceLookup;
+import com.example.shop.sales.common.persistence.DbTransactions;
+import io.helidon.config.Config;
+import io.helidon.webserver.http.HttpRules;
+import java.time.Clock;
+
+/** Wiring of the billing hexagon. Its incoming port InvoiceCreation is handed to the order context. */
+public final class BillingConfiguration {
+
+    private final InvoiceCreation invoiceCreation;
+    private final InvoiceLookup invoiceLookup;
+
+    public BillingConfiguration(Config dbConfig, DbTransactions dbTransactions, Clock clock) {
+        var persistence = new BillingPersistenceAdapterConfiguration(dbConfig, dbTransactions);
+        invoiceCreation = new CreateInvoiceService(persistence.invoiceStore(), persistence.transactionRunner(), clock);
+        invoiceLookup = new FindInvoiceByOrderService(persistence.invoiceFinder());
+    }
+
+    public InvoiceCreation invoiceCreation() {
+        return invoiceCreation;
+    }
+
+    public void routing(HttpRules rules) {
+        BillingWebAdapterConfiguration.routing(rules, invoiceLookup);
+    }
+}
+```
+
+```java
+// sales/order/configuration/OrderConfiguration.java
+package com.example.shop.sales.order.configuration;
+
+import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
+import com.example.shop.sales.common.persistence.DbTransactions;
+import com.example.shop.sales.order.adapter.in.web.OrderWebAdapterConfiguration;
+import com.example.shop.sales.order.adapter.out.billing.OrderBillingDomainAdapterConfiguration;
+import com.example.shop.sales.order.adapter.out.persistence.OrderPersistenceAdapterConfiguration;
+import com.example.shop.sales.order.application.domain.service.PlaceOrderService;
+import com.example.shop.sales.order.application.port.in.OrderPlacement;
+import io.helidon.config.Config;
+import io.helidon.webserver.http.HttpRules;
+import java.time.Clock;
+
+/** Wiring of the order hexagon. Billing is reached through billing's incoming port, given by the component. */
+public final class OrderConfiguration {
+
+    private final OrderPlacement orderPlacement;
+
+    public OrderConfiguration(Config dbConfig, DbTransactions dbTransactions, Clock clock,
+            InvoiceCreation invoiceCreation) {
+        var persistence = new OrderPersistenceAdapterConfiguration(dbConfig, dbTransactions);
+        var invoiceIssuer = OrderBillingDomainAdapterConfiguration.invoiceIssuer(invoiceCreation);
+        orderPlacement = new PlaceOrderService(
+                persistence.orderStore(), invoiceIssuer, persistence.transactionRunner(), clock);
+    }
+
+    public void routing(HttpRules rules) {
+        OrderWebAdapterConfiguration.routing(rules, orderPlacement);
+    }
+}
+```
+
+```java
+// sales/configuration/SalesConfiguration.java
+package com.example.shop.sales.configuration;
+
+import com.example.shop.sales.billing.configuration.BillingConfiguration;
+import com.example.shop.sales.common.persistence.DbTransactions;
+import com.example.shop.sales.order.configuration.OrderConfiguration;
+import io.helidon.config.Config;
+import io.helidon.webserver.http.HttpRules;
+import java.time.Clock;
+
+/**
+ * Wiring of the sales component: one shared DbClient, then the target context (billing) before the context
+ * that calls it (order), which receives billing's incoming port.
+ */
+public final class SalesConfiguration {
+
+    private SalesConfiguration() {
+    }
+
+    public static void routing(HttpRules rules, Config config, Clock clock) {
+        var dbConfig = config.get("db");
+        var dbTransactions = DbTransactions.create(dbConfig);
+
+        var billing = new BillingConfiguration(dbConfig, dbTransactions, clock);
+        var order = new OrderConfiguration(dbConfig, dbTransactions, clock, billing.invoiceCreation());
+
+        billing.routing(rules);
+        order.routing(rules);
+    }
+}
+```
+
+### Architecture rules added for several contexts
+
+Added to the `ArchitectureTest` below (with `import static com.tngtech.archunit.base.DescribedPredicate.not;` and
+`import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;`), each with a fixture in
+`ArchitectureRulesDetectViolationsTest` (for example `com.example.shop.sales.order.fixture.ReachesIntoBilling`, a test
+class of order holding a billing domain object):
+
+```java
+    // The component's shared DbClient (common.persistence) is technology: only persistence adapters and
+    // configuration classes may use it, never the application.
+    @ArchTest
+    static final ArchRule sharedPersistenceIsUsedOnlyByPersistenceAdapters = noClasses()
+            .that().resideOutsideOfPackages("..adapter.out.persistence..", "..configuration..", "..common.persistence..")
+            .should().dependOnClassesThat().resideInAPackage("..common.persistence..");
+
+    // Bounded contexts of the same component: order -> billing only through the DomainAdapter (and the
+    // configuration, which wires it), and only through billing's incoming ports.
+    @ArchTest
+    static final ArchRule orderReachesBillingOnlyThroughItsDomainAdapter = noClasses()
+            .that().resideInAPackage("com.example.shop.sales.order..")
+            .and().resideOutsideOfPackages("com.example.shop.sales.order.adapter.out.billing..",
+                    "com.example.shop.sales.order.configuration..")
+            .should().dependOnClassesThat().resideInAPackage("com.example.shop.sales.billing..");
+
+    @ArchTest
+    static final ArchRule orderUsesOnlyBillingIncomingPorts = classes()
+            .that().resideInAPackage("com.example.shop.sales.order..")
+            .should().onlyDependOnClassesThat(
+                    not(resideInAPackage("com.example.shop.sales.billing.."))
+                            .or(resideInAPackage("com.example.shop.sales.billing.application.port.in..")));
+
+    @ArchTest
+    static final ArchRule billingDoesNotUseOrder = noClasses()
+            .that().resideInAPackage("com.example.shop.sales.billing..")
+            .should().dependOnClassesThat().resideInAPackage("com.example.shop.sales.order..");
+
+```
+
+### Proving the shared transaction (`*IT`)
+
+A deferred constraint trigger makes order's commit fail after the invoice was written: with one transaction per
+context, the invoice would stay. The full test is `examples/helidon-multi-context/src/test/java/com/example/shop/OrderToInvoiceIT.java`.
+
+```java
+    /**
+     * The invoice is written before order's transaction commits: a failure at commit time must take the
+     * invoice with it. With one transaction per context, billing's would already be committed.
+     */
+    @Test
+    void should_store_no_invoice_when_the_order_transaction_fails_at_commit() {
+        DB.execute().dml("CREATE OR REPLACE FUNCTION sales_order.fail_at_commit() RETURNS trigger"
+                + " LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'commit refused'; END $$");
+        DB.execute().dml("CREATE CONSTRAINT TRIGGER fail_at_commit AFTER INSERT ON sales_order.orders"
+                + " DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION sales_order.fail_at_commit()");
+        try (var response = postOrder("{\"lines\":[{\"sku\":\"SKU-1\",\"quantity\":1}]}")) {
+            assertThat(response.status().family()).isEqualTo(Status.Family.SERVER_ERROR);
+        } finally {
+            DB.execute().dml("DROP TRIGGER fail_at_commit ON sales_order.orders");
+        }
+
+        assertThat(count("sales_order.orders")).isZero();
+        assertThat(count("sales_billing.invoices")).isZero();
+    }
+```
 
 ## Architecture test (ArchUnit)
 

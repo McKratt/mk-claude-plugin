@@ -1,0 +1,12 @@
+server:
+  port: 8080
+  host: 0.0.0.0
+
+# One Helidon DbClient (JDBC + Hikari) for the sales component; each bounded context owns its own schema
+# (sales_order, sales_billing). Environment variables override these keys, for example DB_CONNECTION_URL.
+db:
+  source: jdbc
+  connection:
+    url: jdbc:postgresql://localhost:5432/shop
+    username: shop
+    password: shop
