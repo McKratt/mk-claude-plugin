@@ -3,13 +3,13 @@ package com.example.shop;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
-import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -68,7 +68,7 @@ class PlaceOrderIT {
     }
     @Test
     void placesAnOrderStoresItAndRequestsAShipment() throws Exception {
-        shipping.stubFor(post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(202)));
+        shipping.stubFor(WireMock.post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(202)));
 
         var response = post("/orders",
                 "{\"lines\":[{\"sku\":\"SKU-1\",\"quantity\":2},{\"sku\":\"SKU-2\",\"quantity\":1}]}");
@@ -83,7 +83,7 @@ class PlaceOrderIT {
 
     @Test
     void storesNothingWhenTheShippingApiFails() throws Exception {
-        shipping.stubFor(post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(503)));
+        shipping.stubFor(WireMock.post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(503)));
 
         var response = post("/orders",
                 "{\"lines\":[{\"sku\":\"SKU-1\",\"quantity\":1}]}");
