@@ -57,7 +57,7 @@ This plugin follows [Semantic Versioning](https://semver.org/). The version live
 - **MINOR**: new skill or agent, backwards-compatible
 - **PATCH**: backwards-compatible fixes and wording improvements
 
-Current version: `0.1.0` (initial development, anything may change).
+Current version: `0.0.3` (initial development, anything may change).
 
 ## References
 
