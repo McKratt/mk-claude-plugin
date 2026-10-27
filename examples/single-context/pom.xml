@@ -20,7 +20,7 @@
   <properties>
     <java.version>25</java.version>
     <archunit.version>1.5.1</archunit.version>
-    <wiremock.version>3.13.2</wiremock.version>
+    <wiremock-spring-boot.version>4.0.9</wiremock-spring-boot.version>
   </properties>
 
   <dependencies>
@@ -35,13 +35,6 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-restclient</artifactId>
-    </dependency>
-    <!-- Spring Boot's RestClient builder uses the first HTTP client it finds: Apache, Jetty, Reactor Netty,
-         then the JDK client. Apache HttpClient is the preferred, pooled one and speaks HTTP/1.1 on plain HTTP. -->
-    <dependency>
-      <groupId>org.apache.httpcomponents.client5</groupId>
-      <artifactId>httpclient5</artifactId>
-      <scope>runtime</scope>
     </dependency>
     <dependency>
       <groupId>org.postgresql</groupId>
@@ -63,6 +56,17 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- Spring Boot 4: test support is modular, one test starter per technology. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-webmvc-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-jpa-test</artifactId>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-testcontainers</artifactId>
@@ -74,9 +78,9 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>org.wiremock</groupId>
-      <artifactId>wiremock-standalone</artifactId>
-      <version>${wiremock.version}</version>
+      <groupId>org.wiremock.integrations</groupId>
+      <artifactId>wiremock-spring-boot</artifactId>
+      <version>${wiremock-spring-boot.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>

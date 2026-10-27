@@ -150,8 +150,8 @@ that start the application on a random port, call it through its real entry poin
 
 - the database is a **real one in a container** (Testcontainers, same engine as production, wired with
   `@ServiceConnection`), never an embedded substitute such as H2;
-- **third-party services are mocked with WireMock** (start a `WireMockExtension` on a dynamic port and register its
-  URL with `@DynamicPropertySource`); verify the requests the adapter sends, and test the failure cases (for example a
+- **third-party services are mocked with WireMock** (`@EnableWireMock` from `wiremock-spring-boot`, which starts it on a random port
+  and publishes its URL as a property); verify the requests the adapter sends, and test the failure cases (for example a
   503 must roll the transaction back);
 - clean the tables in `@BeforeEach` so tests do not depend on each other;
 - put the shared setup in a composed annotation (for example `@IntegrationTest`) and a `@TestConfiguration` with the container.
