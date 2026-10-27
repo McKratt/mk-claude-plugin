@@ -1,6 +1,6 @@
 package com.example.shop;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
@@ -16,7 +16,9 @@ class ArchitectureRulesDetectViolationsTest {
     private static final JavaClasses VIOLATIONS = new ClassFileImporter().importPackages("archfixtures");
 
     private static void assertViolation(ArchRule rule, JavaClasses classes) {
-        assertTrue(rule.evaluate(classes).hasViolation(), "Expected a violation for rule: " + rule.getDescription());
+        assertThat(rule.evaluate(classes).hasViolation())
+                .as("Expected a violation for rule: " + rule.getDescription())
+                .isTrue();
     }
 
     @Test

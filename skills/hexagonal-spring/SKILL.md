@@ -1,12 +1,12 @@
 ---
 name: hexagonal-spring
-description: Scaffold or restructure a Spring Boot project on Java 25 using hexagonal architecture as taught in "Get Your Hands Dirty on Clean Architecture" (Tom Hombergs). Use when the user wants to start a new Spring Boot service, add a use case or bounded context, or reorganize packages into ports and adapters.
+description: Scaffold or restructure a Spring Boot project on Java 25 using hexagonal architecture as taught in "Get Your Hands Dirty on Clean Architecture" (Tom Hombergs). Use when the user wants to start a new Spring Boot service, add a use case or bounded context, or reorganise packages into ports and adapters.
 ---
 
 # Hexagonal Spring Boot (Java 25)
 
 Structure Spring Boot projects with the ports-and-adapters style from
-*Get Your Hands Dirty on Clean Architecture*. The business domain sits at the center;
+*Get Your Hands Dirty on Clean Architecture*. The business domain sits at the centre;
 web, persistence and other technology are replaceable adapters around it.
 
 Ready-to-adapt code lives in [references/templates.md](references/templates.md). Read it before generating code.

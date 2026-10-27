@@ -687,7 +687,7 @@ class ClockConfiguration {
 }
 ```
 
-Place other general `@Configuration` classes here (web, security, serialization). Component-specific wiring stays inside its component.
+Place other general `@Configuration` classes here (web, security, serialisation). Component-specific wiring stays inside its component.
 
 ## Use case integration test (`*IT`)
 

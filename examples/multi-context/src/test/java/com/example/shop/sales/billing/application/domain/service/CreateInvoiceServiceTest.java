@@ -1,8 +1,8 @@
 package com.example.shop.sales.billing.application.domain.service;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.BDDMockito.mock;
+import static org.mockito.BDDMockito.then;
 
 import com.example.shop.sales.billing.application.domain.model.Invoice;
 import com.example.shop.sales.billing.application.port.in.CreateInvoiceCommand;
@@ -29,9 +29,9 @@ class CreateInvoiceServiceTest {
         service.createInvoice(new CreateInvoiceCommand(orderId, 3));
 
         var captor = ArgumentCaptor.forClass(Invoice.class);
-        verify(invoiceStore).save(captor.capture());
-        assertEquals(orderId, captor.getValue().getOrderId());
-        assertEquals(3, captor.getValue().getItemCount());
-        assertEquals(NOW, captor.getValue().getIssuedAt());
+        then(invoiceStore).should().save(captor.capture());
+        assertThat(captor.getValue().getOrderId()).isEqualTo(orderId);
+        assertThat(captor.getValue().getItemCount()).isEqualTo(3);
+        assertThat(captor.getValue().getIssuedAt()).isEqualTo(NOW);
     }
 }
