@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Checks that the rules in {@link ArchitectureTest} really fail on bad code. The bad classes live in the
- * test sources (package archfixtures) and are not part of the analysed application.
+ * test sources (package archfixtures) and are not part of the analyzed application.
  */
 class ArchitectureRulesDetectViolationsTest {
 

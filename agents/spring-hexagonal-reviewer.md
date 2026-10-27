@@ -57,7 +57,7 @@ You never modify files.
    that run in the integration-test phase (`maven-failsafe-plugin`), with a real database in a container (Testcontainers)
    and third-party services mocked by WireMock. An embedded database (H2 or similar) in place of the production engine,
    or a `@SpringBootTest` run by surefire, is a violation. A slice test (`@WebMvcTest`, `@DataJpaTest`) is an
-   observation unless the test class says why a use case test could not cover the behaviour.
+   observation unless the test class says why a use case test could not cover the behavior.
 12. **Enforcement.** An automated architecture test (for example with ArchUnit) exists and covers the rules above.
 
 ## How to report

@@ -1,6 +1,6 @@
 ---
 name: java-testing
-description: Use when writing, reviewing, or fixing Java tests for a Spring Boot project. Prioritises @SpringBootTest tests that cover a whole use case (Testcontainers database, WireMock for third parties, run by Maven failsafe) over slice tests; also covers unit tests (JUnit, AssertJ, BDDMockito).
+description: Use when writing, reviewing, or fixing Java tests for a Spring Boot project. Prioritizes @SpringBootTest tests that cover a whole use case (Testcontainers database, WireMock for third parties, run by Maven failsafe) over slice tests; also covers unit tests (JUnit, AssertJ, BDDMockito).
 ---
 
 # Java Testing
@@ -33,7 +33,7 @@ In order of priority:
 2. **Unit tests (`*Test`)** for logic that does not need Spring: domain objects, value objects, self-validating commands,
    mappers, and services with branching logic that is awkward to reach through the use case tests.
 3. **Architecture tests (ArchUnit, `*Test`)**: no server needed, so surefire runs them.
-4. **Slice tests (`@WebMvcTest`, `@DataJpaTest`)**: only when a use case test cannot reach the behaviour reasonably,
+4. **Slice tests (`@WebMvcTest`, `@DataJpaTest`)**: only when a use case test cannot reach the behavior reasonably,
    for example exhaustive request-validation combinations or a complex query with many edge cases. Say why in the test
    class. Never write one by default or "per layer".
 
@@ -275,7 +275,7 @@ assertSoftly(softly -> {
 
 ## Slice tests (the exception)
 
-Reach for a slice only when a use case test cannot cover the behaviour reasonably (see "Which test for what"), and use the
+Reach for a slice only when a use case test cannot cover the behavior reasonably (see "Which test for what"), and use the
 narrowest one. In Spring Boot 4 the slice annotations moved to per-technology packages (for example
 `@AutoConfigureMockMvc` is in `org.springframework.boot.webmvc.test.autoconfigure`, per the
 [Boot testing reference](https://docs.spring.io/spring-boot/reference/testing/spring-boot-applications.html)); check the
@@ -310,7 +310,7 @@ A `@DataJpaTest` replaces the datasource with an embedded one by default; keep `
 
 ## Naming
 
-Test method names use `snake_case` following `should_<expected_behaviour>_when_<condition>`:
+Test method names use `snake_case` following `should_<expected_behavior>_when_<condition>`:
 
 ```
 should_return_order_when_id_exists
