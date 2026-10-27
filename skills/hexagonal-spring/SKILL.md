@@ -117,6 +117,8 @@ components and the `@SpringBootApplication` class:
    `application/port/out`, implemented by an adapter in `adapter/out/<target-component>/` (for example
    `<Target>RestAdapter`) that calls the target's public API and maps the response to the source's own model. Like every adapter, it is
    created by a `@Configuration` class in its package (rule 7).
+   Outgoing HTTP goes through Spring's `RestClient`, built from the injected auto-configured `RestClient.Builder`, never
+   through a raw HTTP client (`java.net.http`, Apache or OkHttp types in application code).
    There is **no compile-time dependency** between the two components. If the API technology is not stated, ask the user.
 10. **`common`** holds utilities usable anywhere in the component (all its contexts and layers). It depends on
     neither `application` nor `adapter`. It is not shared between different components (rule 9).
