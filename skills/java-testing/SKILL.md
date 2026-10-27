@@ -310,7 +310,7 @@ A `@DataJpaTest` replaces the datasource with an embedded one by default; keep `
 
 ## Naming
 
-Test method names use `snake_case` following `should_<expected_behavior>_when_<condition>`:
+Test method names use `snake_case` following `should_<expected_behaviour>_when_<condition>`:
 
 ```
 should_return_order_when_id_exists

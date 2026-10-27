@@ -1,8 +1,8 @@
 package com.example.shop.sales.order.adapter.out.billing;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.BDDMockito.mock;
+import static org.mockito.BDDMockito.then;
 
 import com.example.shop.sales.order.application.domain.model.Order;
 import com.example.shop.sales.billing.application.port.in.CreateInvoiceCommand;
@@ -26,8 +26,8 @@ class BillingDomainAdapterTest {
         adapter.createInvoiceFor(order);
 
         var captor = ArgumentCaptor.forClass(CreateInvoiceCommand.class);
-        verify(invoiceCreation).createInvoice(captor.capture());
-        assertEquals(order.getId().value(), captor.getValue().orderId());
-        assertEquals(3, captor.getValue().itemCount());
+        then(invoiceCreation).should().createInvoice(captor.capture());
+        assertThat(captor.getValue().orderId()).isEqualTo(order.getId().value());
+        assertThat(captor.getValue().itemCount()).isEqualTo(3);
     }
 }

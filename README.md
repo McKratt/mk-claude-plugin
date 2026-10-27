@@ -48,6 +48,6 @@ Current version: `0.0.2` (initial development, anything may change).
 - Spring Boot: [REST clients (`RestClient`)](https://docs.spring.io/spring-boot/reference/io/rest-client.html), [Testing Spring Boot applications](https://docs.spring.io/spring-boot/reference/testing/spring-boot-applications.html), [4.0 Migration Guide](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide)
 - WireMock: [Spring Boot integration](https://wiremock.org/docs/spring-boot/); known h2c issue with the JDK HTTP client and the standalone WireMock: [#2637](https://github.com/wiremock/wiremock/issues/2637), [#3577](https://github.com/wiremock/wiremock/issues/3577)
 
-## License
+## Licence
 
 See [LICENSE](LICENSE).

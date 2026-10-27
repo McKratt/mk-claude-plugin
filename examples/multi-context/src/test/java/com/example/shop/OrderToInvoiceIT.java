@@ -1,6 +1,6 @@
 package com.example.shop;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
@@ -25,7 +25,7 @@ class OrderToInvoiceIT {
                 .expectStatus().isCreated()
                 .expectBody(String.class).returnResult().getResponseBody();
         var matcher = ID.matcher(created);
-        assertTrue(matcher.find(), "no order id in: " + created);
+        assertThat(matcher.find()).as("no order id in: " + created).isTrue();
         var orderId = matcher.group(1);
 
         client.get().uri("/invoices/by-order/{orderId}", orderId)

@@ -1,9 +1,9 @@
 package com.example.shop.sales.application.domain.service;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import static org.mockito.BDDMockito.mock;
+import static org.mockito.BDDMockito.then;
 
 import com.example.shop.sales.application.domain.model.Order;
 import com.example.shop.sales.application.port.in.PlaceOrderCommand;
@@ -31,15 +31,15 @@ class PlaceOrderServiceTest {
                 new PlaceOrderCommand(List.of(new PlaceOrderCommand.Line("SKU-1", 2))));
 
         var captor = ArgumentCaptor.forClass(Order.class);
-        verify(orderStore).save(captor.capture());
-        assertEquals(orderId, captor.getValue().getId());
-        assertEquals(NOW, captor.getValue().getPlacedAt());
+        then(orderStore).should().save(captor.capture());
+        assertThat(captor.getValue().getId()).isEqualTo(orderId);
+        assertThat(captor.getValue().getPlacedAt()).isEqualTo(NOW);
     }
 
     @Test
     void should_request_a_shipment_when_the_order_is_placed() {
         service.placeOrder(new PlaceOrderCommand(List.of(new PlaceOrderCommand.Line("SKU-1", 1))));
 
-        verify(shipmentRequester).requestShipmentFor(any(Order.class));
+        then(shipmentRequester).should().requestShipmentFor(any(Order.class));
     }
 }

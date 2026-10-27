@@ -5,7 +5,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.WireMockServer;
@@ -52,8 +52,8 @@ class PlaceOrderIT {
                 .expectStatus().isCreated()
                 .expectBody().jsonPath("$.id").isNotEmpty();
 
-        assertEquals(1, jdbcTemplate.queryForObject("select count(*) from orders", Integer.class));
-        assertEquals(2, jdbcTemplate.queryForObject("select count(*) from order_lines", Integer.class));
+        assertThat(jdbcTemplate.queryForObject("select count(*) from orders", Integer.class)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from order_lines", Integer.class)).isEqualTo(2);
         shipping.verify(1, postRequestedFor(urlEqualTo("/shipments"))
                 .withRequestBody(matchingJsonPath("$.itemCount", equalTo("3"))));
     }
@@ -67,7 +67,7 @@ class PlaceOrderIT {
                 .exchange()
                 .expectStatus().is5xxServerError();
 
-        assertEquals(0, jdbcTemplate.queryForObject("select count(*) from orders", Integer.class));
+        assertThat(jdbcTemplate.queryForObject("select count(*) from orders", Integer.class)).isZero();
     }
 
     @Test
