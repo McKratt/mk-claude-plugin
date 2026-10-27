@@ -744,9 +744,10 @@ class PlaceOrderIT {
         jdbcTemplate.execute("delete from orders");
     }
 
+    // WireMock.post is qualified because the test class has its own post(path, json) helper.
     @Test
     void placesAnOrderStoresItAndRequestsAShipment() throws Exception {
-        shipping.stubFor(post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(202)));
+        shipping.stubFor(WireMock.post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(202)));
 
         // POST /orders with the JDK HttpClient (or RestClient / WebTestClient) ...
         // assertEquals(201, response.statusCode());
@@ -756,7 +757,7 @@ class PlaceOrderIT {
 
     @Test
     void storesNothingWhenTheShippingApiFails() throws Exception {
-        shipping.stubFor(post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(503)));
+        shipping.stubFor(WireMock.post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(503)));
 
         // POST /orders ... assertEquals(500, ...) and assertEquals(0, count of orders)
     }
