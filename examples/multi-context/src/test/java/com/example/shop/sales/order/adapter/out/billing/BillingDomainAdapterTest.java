@@ -18,7 +18,7 @@ class BillingDomainAdapterTest {
     private final BillingDomainAdapter adapter = new BillingDomainAdapter(invoiceCreation);
 
     @Test
-    void convertsTheOrderIntoABillingCommand() {
+    void should_convert_the_order_into_a_billing_command_when_an_invoice_is_created() {
         var order = Order.place(
                 List.of(new Order.Line("SKU-1", 2), new Order.Line("SKU-2", 1)),
                 Instant.parse("2026-01-01T10:00:00Z"));

@@ -23,7 +23,7 @@ class CreateInvoiceServiceTest {
             new CreateInvoiceService(invoiceStore, Clock.fixed(NOW, ZoneOffset.UTC));
 
     @Test
-    void issuesAndSavesTheInvoice() {
+    void should_issue_and_save_the_invoice_when_a_command_is_received() {
         var orderId = UUID.randomUUID();
 
         service.createInvoice(new CreateInvoiceCommand(orderId, 3));

@@ -33,7 +33,9 @@ class PlaceOrderIT {
 
     @RegisterExtension
     static WireMockExtension shipping = WireMockExtension.newInstance()
-            .options(wireMockConfig().dynamicPort())
+            // The JDK HttpClient behind RestClient tries an h2c upgrade on plain HTTP; WireMock (Jetty)
+            // fails on it for POST requests with a body (wiremock/wiremock#2637, #3577).
+            .options(wireMockConfig().dynamicPort().http2PlainDisabled(true))
             .build();
 
     @DynamicPropertySource
@@ -48,7 +50,7 @@ class PlaceOrderIT {
     JdbcTemplate jdbcTemplate;
 
     @BeforeEach
-    void cleanDatabase() {
+    void clean_database() {
         jdbcTemplate.execute("delete from order_lines");
         jdbcTemplate.execute("delete from orders");
     }
@@ -67,7 +69,7 @@ class PlaceOrderIT {
         return http.send(request, HttpResponse.BodyHandlers.ofString());
     }
     @Test
-    void placesAnOrderStoresItAndRequestsAShipment() throws Exception {
+    void should_store_the_order_and_request_a_shipment_when_the_order_is_valid() throws Exception {
         shipping.stubFor(WireMock.post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(202)));
 
         var response = post("/orders",
@@ -82,7 +84,7 @@ class PlaceOrderIT {
     }
 
     @Test
-    void storesNothingWhenTheShippingApiFails() throws Exception {
+    void should_store_nothing_when_the_shipping_api_fails() throws Exception {
         shipping.stubFor(WireMock.post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(503)));
 
         var response = post("/orders",
@@ -93,7 +95,7 @@ class PlaceOrderIT {
     }
 
     @Test
-    void rejectsAnOrderWithoutLines() throws Exception {
+    void should_return_400_and_call_no_third_party_when_the_order_has_no_lines() throws Exception {
         var response = post("/orders", "{\"lines\":[]}");
 
         assertEquals(400, response.statusCode());

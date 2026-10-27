@@ -8,17 +8,17 @@ import org.junit.jupiter.api.Test;
 class PlaceOrderCommandTest {
 
     @Test
-    void rejectsABlankSku() {
+    void should_reject_the_line_when_sku_is_blank() {
         assertThrows(IllegalArgumentException.class, () -> new PlaceOrderCommand.Line(" ", 1));
     }
 
     @Test
-    void rejectsNullLines() {
+    void should_reject_the_command_when_lines_are_null() {
         assertThrows(IllegalArgumentException.class, () -> new PlaceOrderCommand(null));
     }
 
     @Test
-    void acceptsValidLines() {
+    void should_accept_the_command_when_lines_are_valid() {
         new PlaceOrderCommand(List.of(new PlaceOrderCommand.Line("SKU-1", 1)));
     }
 }
