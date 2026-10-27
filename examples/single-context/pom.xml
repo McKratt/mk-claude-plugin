@@ -36,6 +36,13 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-restclient</artifactId>
     </dependency>
+    <!-- Spring Boot's RestClient builder uses the first HTTP client it finds: Apache, Jetty, Reactor Netty,
+         then the JDK client. Apache HttpClient is the preferred, pooled one and speaks HTTP/1.1 on plain HTTP. -->
+    <dependency>
+      <groupId>org.apache.httpcomponents.client5</groupId>
+      <artifactId>httpclient5</artifactId>
+      <scope>runtime</scope>
+    </dependency>
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
