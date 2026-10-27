@@ -10,10 +10,27 @@ Personal Claude Code plugin: skills and agents for Java / Spring Boot projects.
 | Skill | `java-testing` | `/mk-claude-plugin:java-testing` | Java tests: use case `@SpringBootTest` tests first (Testcontainers, WireMock, failsafe), unit tests, slice tests as the exception |
 | Agent | `spring-hexagonal-reviewer` | `mk-claude-plugin:spring-hexagonal-reviewer` | Read-only review of a codebase against the `hexagonal-spring` rules                       |
 
+## Install
+
+In a Claude Code session:
+
+```
+/plugin marketplace add McKratt/mk-claude-plugin
+/plugin install mk-claude-plugin@mckratt-plugins
+```
+
+To share it with everyone working in a repository, run from that repository's shell and commit the `.claude/settings.json` they write:
+
+```bash
+claude plugin marketplace add McKratt/mk-claude-plugin --scope project
+claude plugin install mk-claude-plugin@mckratt-plugins --scope project
+```
+
 ## Layout
 
 ```
 .claude-plugin/plugin.json      # manifest
+.claude-plugin/marketplace.json # makes this repository a marketplace listing the plugin
 skills/<name>/SKILL.md          # one directory per skill
 skills/<name>/references/       # supporting files a skill reads on demand (for example templates.md)
 agents/<name>.md                # one file per subagent
@@ -42,7 +59,7 @@ Current version: `0.0.2` (initial development, anything may change).
 
 ## References
 
-- Claude Code docs: [Create a plugin](https://code.claude.com/docs/en/plugins/create.md), [Subagents](https://code.claude.com/docs/en/sub-agents.md)
+- Claude Code docs: [Create a plugin](https://code.claude.com/docs/en/plugins/create.md), [Create a marketplace](https://code.claude.com/docs/en/plugin-marketplaces.md), [Host and maintain a marketplace](https://code.claude.com/docs/en/plugins/host-marketplace.md), [Subagents](https://code.claude.com/docs/en/sub-agents.md)
 - Tom Hombergs, *Get Your Hands Dirty on Clean Architecture*, 2nd edition (Packt)
 - Java interface naming: [Baeldung, Java interface naming conventions](https://www.baeldung.com/java-interface-naming-conventions)
 - Spring Boot: [REST clients (`RestClient`)](https://docs.spring.io/spring-boot/reference/io/rest-client.html), [Testing Spring Boot applications](https://docs.spring.io/spring-boot/reference/testing/spring-boot-applications.html), [4.0 Migration Guide](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide)

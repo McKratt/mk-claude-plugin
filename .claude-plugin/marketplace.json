@@ -1,0 +1,14 @@
+{
+  "name": "mckratt-plugins",
+  "description": "McKratt's Claude Code plugins for Java / Spring Boot projects",
+  "owner": {
+    "name": "McKratt"
+  },
+  "plugins": [
+    {
+      "name": "mk-claude-plugin",
+      "source": "./",
+      "description": "Skills and agents for Java / Spring Boot projects"
+    }
+  ]
+}
