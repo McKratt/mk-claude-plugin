@@ -499,9 +499,8 @@ class OrderShippingRestAdapterConfiguration {
 ```
 
 Always start from the injected, auto-configured `RestClient.Builder` (dependency `spring-boot-starter-restclient`), never
-from `RestClient.builder()`, `RestClient.create()` or a raw `java.net.http.HttpClient`. Add
-`org.apache.httpcomponents.client5:httpclient5` (runtime): Spring Boot then uses Apache HttpClient, which also avoids the
-h2c upgrade problem of the JDK client against plain-HTTP servers such as WireMock.
+from `RestClient.builder()`, `RestClient.create()` or a raw `java.net.http.HttpClient`. No extra HTTP client library is
+needed: Spring Boot then uses the JDK client.
 
 The base URL comes from `application.yaml`:
 
@@ -683,7 +682,7 @@ Place other general `@Configuration` classes here (web, security, serialization)
 
 Priority test type. Build setup (Maven): `org.postgresql:postgresql` (runtime), and in test scope
 `spring-boot-testcontainers`, `org.testcontainers:testcontainers-postgresql` and, for third-party APIs,
-`org.wiremock:wiremock-standalone` (the standalone artifact avoids a Jetty clash with Spring Boot). Failsafe runs the
+`org.wiremock.integrations:wiremock-spring-boot` (WireMock's Spring Boot integration). Failsafe runs the
 `*IT` classes in the integration-test phase:
 
 ```xml
@@ -726,19 +725,16 @@ class PostgresTestConfiguration {
 package com.example.shop;
 
 @IntegrationTest
+@EnableWireMock(@ConfigureWireMock(name = "shipping", baseUrlProperties = "shipping.base-url"))
 class PlaceOrderIT {
 
-    @RegisterExtension
-    static WireMockExtension shipping = WireMockExtension.newInstance()
-            .options(wireMockConfig().dynamicPort()).build();
+    // Random port; the base URL is published as the property shipping.base-url (read by the adapter configuration).
+    @InjectWireMock("shipping")
+    WireMockServer shipping;
 
-    @DynamicPropertySource
-    static void shippingApi(DynamicPropertyRegistry registry) {
-        registry.add("shipping.base-url", shipping::baseUrl);
-    }
-
-    @Value("${local.server.port}")
-    int port;
+    // Bound to the running server (random port) by @AutoConfigureRestTestClient on @IntegrationTest.
+    @Autowired
+    RestTestClient client;
 
     @Autowired
     JdbcTemplate jdbcTemplate;
@@ -749,13 +745,15 @@ class PlaceOrderIT {
         jdbcTemplate.execute("delete from orders");
     }
 
-    // WireMock.post is qualified because the test class has its own post(path, json) helper.
     @Test
     void should_store_the_order_and_request_a_shipment_when_the_order_is_valid() throws Exception {
         shipping.stubFor(WireMock.post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(202)));
 
-        // POST /orders with a RestClient built from the injected RestClient.Builder ...
-        // assertEquals(201, response.getStatusCode().value());
+        client.post().uri("/orders").contentType(MediaType.APPLICATION_JSON)
+                .body("{\"lines\":[{\"sku\":\"SKU-1\",\"quantity\":2}]}")
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody().jsonPath("$.id").isNotEmpty();
         // assertEquals(1, jdbcTemplate.queryForObject("select count(*) from orders", Integer.class));
         shipping.verify(1, postRequestedFor(urlEqualTo("/shipments")));
     }
@@ -764,7 +762,7 @@ class PlaceOrderIT {
     void should_store_nothing_when_the_shipping_api_fails() throws Exception {
         shipping.stubFor(WireMock.post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(503)));
 
-        // POST /orders ... assertEquals(500, ...) and assertEquals(0, count of orders)
+        // POST /orders ... .expectStatus().is5xxServerError(), then assert that no order was stored
     }
 }
 ```

@@ -16,7 +16,7 @@ default for Spring. Tests that cover a whole use case with `@SpringBootTest` com
 | Assertions      | AssertJ (`assertThat(...)`)                                                     |
 | Mocking         | Mockito via BDD notation (`BDDMockito`), for unit tests only                    |
 | Database        | Real database in a container: Testcontainers 2.0 (never H2 or another embedded substitute) |
-| Third parties   | WireMock (`org.wiremock:wiremock-standalone`, which avoids a Jetty clash with Spring Boot) |
+| Third parties   | WireMock through its Spring Boot integration (`org.wiremock.integrations:wiremock-spring-boot`) |
 | Spring          | Spring Boot 4 Test: `@SpringBootTest` first, slices (`@WebMvcTest`, `@DataJpaTest`) as the exception |
 | Build           | `maven-surefire-plugin` for `*Test`, `maven-failsafe-plugin` for `*IT`           |
 
@@ -63,8 +63,8 @@ runs only the fast ones.
 </plugin>
 ```
 
-Test dependencies: `spring-boot-starter-test`, `spring-boot-testcontainers`, `org.testcontainers:testcontainers-postgresql`
-(adapt the module to the database in use) and `org.wiremock:wiremock-standalone`. Testcontainers needs a running Docker daemon.
+Test dependencies: `spring-boot-starter-test`, `spring-boot-starter-webmvc-test`, `spring-boot-starter-data-jpa-test`, `spring-boot-testcontainers`, `org.testcontainers:testcontainers-postgresql`
+(adapt the module to the database in use) and `org.wiremock.integrations:wiremock-spring-boot`. Testcontainers needs a running Docker daemon.
 
 ---
 
@@ -100,20 +100,16 @@ Use the same database engine and major version as production.
 
 ```java
 @IntegrationTest
+@EnableWireMock(@ConfigureWireMock(name = "shipping", baseUrlProperties = "shipping.base-url"))
 class PlaceOrderIT {
 
-    @RegisterExtension
-    static WireMockExtension shipping = WireMockExtension.newInstance()
-            .options(wireMockConfig().dynamicPort())
-            .build();
+    // Random port; the base URL is published as the property shipping.base-url (read by the adapter configuration).
+    @InjectWireMock("shipping")
+    WireMockServer shipping;
 
-    @DynamicPropertySource
-    static void shippingApi(DynamicPropertyRegistry registry) {
-        registry.add("shipping.base-url", shipping::baseUrl);
-    }
-
-    @Value("${local.server.port}")
-    int port;
+    // Bound to the running server (random port) by @AutoConfigureRestTestClient on @IntegrationTest.
+    @Autowired
+    RestTestClient client;
 
     @Autowired
     JdbcTemplate jdbcTemplate;
@@ -130,11 +126,12 @@ class PlaceOrderIT {
         shipping.stubFor(WireMock.post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(202)));
 
         // Act
-        var response = post("/orders", """
-                {"lines":[{"sku":"SKU-1","quantity":2},{"sku":"SKU-2","quantity":1}]}""");
-
-        // Assert
-        assertThat(response.statusCode()).isEqualTo(201);
+        client.post().uri("/orders").contentType(MediaType.APPLICATION_JSON)
+                .body("""
+                        {"lines":[{"sku":"SKU-1","quantity":2},{"sku":"SKU-2","quantity":1}]}""")
+                .exchange()
+                // Assert
+                .expectStatus().isCreated();
         assertThat(jdbcTemplate.queryForObject("select count(*) from orders", Integer.class)).isEqualTo(1);
         shipping.verify(1, postRequestedFor(urlEqualTo("/shipments"))
                 .withRequestBody(matchingJsonPath("$.itemCount", equalTo("3"))));
@@ -146,11 +143,12 @@ class PlaceOrderIT {
         shipping.stubFor(WireMock.post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(503)));
 
         // Act
-        var response = post("/orders", """
-                {"lines":[{"sku":"SKU-1","quantity":1}]}""");
-
-        // Assert
-        assertThat(response.statusCode()).isEqualTo(500);
+        client.post().uri("/orders").contentType(MediaType.APPLICATION_JSON)
+                .body("""
+                        {"lines":[{"sku":"SKU-1","quantity":1}]}""")
+                .exchange()
+                // Assert
+                .expectStatus().is5xxServerError();
         assertThat(jdbcTemplate.queryForObject("select count(*) from orders", Integer.class)).isZero();
     }
 }
@@ -160,29 +158,34 @@ Rules for these tests:
 
 - **Isolation**: clean the tables in `@BeforeEach` (or use unique ids and query by id). Never rely on test order.
 - **Container lifecycle**: declare it as a bean in a `@TestConfiguration`, not per class, so every `*IT` shares one container.
-- **WireMock URL**: register it lazily with `@DynamicPropertySource` (`shipping::baseUrl`), because the extension starts
-  before the context but after class loading. A `@RegisterExtension` field must be `static`.
+- **WireMock URL**: `@EnableWireMock(@ConfigureWireMock(name = "shipping", baseUrlProperties = "shipping.base-url"))`
+  starts a WireMock on a random port and publishes its base URL as a Spring property, so no `@DynamicPropertySource`
+  is needed; `@InjectWireMock("shipping") WireMockServer` gives access to it
+  ([WireMock Spring Boot docs](https://wiremock.org/docs/spring-boot/)).
 - **Verify what you send**: `shipping.verify(...)` on the path, headers and body the adapter produces.
 - **Failure paths are part of the use case**: stub 4xx/5xx and timeouts, and assert the consequence (HTTP status, rollback).
-- **Name clash**: if the test class has its own `post(path, json)` helper, call WireMock's as `WireMock.post(...)`.
 - **Outgoing HTTP always goes through Spring's `RestClient`, built from the auto-configured `RestClient.Builder`**
   (inject it; dependency `spring-boot-starter-restclient`). Never `java.net.http.HttpClient`, `RestClient.builder()`
   or `RestClient.create()` in application code: the injected builder carries Spring Boot's message converters, request
   factory and global `spring.http.clients.*` settings
   ([Spring Boot reference](https://docs.spring.io/spring-boot/reference/io/rest-client.html)). An ArchUnit rule can
   enforce it (no dependency on `java.net.http..`, `org.apache.hc..`, `okhttp3..`).
-- **Put Apache HttpClient 5 on the classpath** (`org.apache.httpcomponents.client5:httpclient5`, version managed by
-  Spring Boot). Boot picks the first client it finds: Apache, Jetty, Reactor Netty, the JDK client, then
-  `HttpURLConnection`. Without Apache, `RestClient` uses the JDK `HttpClient`, which tries an HTTP/2 cleartext (h2c)
-  upgrade on plain HTTP; WireMock's embedded Jetty fails on it for requests with a body (`Received RST_STREAM` /
-  `EOFException`, a 500 in the application). We hit this in CI even with the injected builder. It is a known upstream
-  problem, not a WireMock "HTTP/1 only" limit (wiremock/wiremock issues #2637 and #3577). Apache HttpClient does not
-  attempt the upgrade. Alternative: `wireMockConfig().http2PlainDisabled(true)` on the WireMock side.
-- **WireMock version**: use the 3.x line (3.13.2 at the time of writing, per wiremock.org); 4.x is still in beta and announces breaking changes.
-- **Calling the application from a test**: also a `RestClient`, built from the injected `RestClient.Builder` with
-  `.baseUrl("http://localhost:" + port)` and `.defaultStatusHandler(HttpStatusCode::isError, (request, response) -> { })`
-  so that 4xx/5xx are results to assert on instead of exceptions. Spring Boot 4's `RestTestClient` is a more fluent
-  alternative aimed at the running server.
+- **JDK client, no extra HTTP library**: without Apache/Jetty/Reactor Netty on the classpath, `RestClient` uses the JDK
+  `HttpClient`, and that is fine. With a plain `WireMockExtension` (wiremock-standalone) we saw `Received RST_STREAM`
+  on POSTs with a body in CI (Spring Boot 4.1, WireMock 3.13.2), a known upstream h2c issue (wiremock/wiremock #2637,
+  #3577) that `http2PlainDisabled(true)` or Apache HttpClient avoid. With `wiremock-spring-boot` 4.0.9 the same tests
+  pass in CI with none of these; we did not investigate why.
+- **Calling the application from a test**: Spring Boot 4's `RestTestClient`. Annotate the test (here, the
+  `@IntegrationTest` meta-annotation) with `@AutoConfigureRestTestClient`
+  (`org.springframework.boot.resttestclient.autoconfigure`) and inject `RestTestClient`; with
+  `webEnvironment = RANDOM_PORT` it is bound to the running server, and error statuses are assertions
+  (`expectStatus().isBadRequest()`), not exceptions. It replaces `TestRestTemplate`, which Boot 4 removed
+  ([Boot 4.0 migration guide](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide)).
+  If you need the port itself, inject it with `@LocalServerPort` (`org.springframework.boot.test.web.server`), not
+  `@Value("${local.server.port}")`.
+- **Modular test starters (Spring Boot 4)**: besides `spring-boot-starter-test`, add the starter of each technology the
+  tests touch: `spring-boot-starter-webmvc-test`, `spring-boot-starter-data-jpa-test`. CI of the examples validates
+  these coordinates.
 - **`@MockBean` no longer exists in Spring Boot 4**: use `@MockitoBean`, and in a use case test only for a collaborator
   that truly cannot be reached otherwise.
 
@@ -273,7 +276,11 @@ assertSoftly(softly -> {
 ## Slice tests (the exception)
 
 Reach for a slice only when a use case test cannot cover the behaviour reasonably (see "Which test for what"), and use the
-narrowest one.
+narrowest one. In Spring Boot 4 the slice annotations moved to per-technology packages (for example
+`@AutoConfigureMockMvc` is in `org.springframework.boot.webmvc.test.autoconfigure`, per the
+[Boot testing reference](https://docs.spring.io/spring-boot/reference/testing/spring-boot-applications.html)); check the
+import for `@WebMvcTest`, `@DataJpaTest` and `@AutoConfigureTestDatabase` in the Boot 4 API docs, these snippets were not
+compiled by the example CI.
 
 ```java
 // Many request-validation combinations, no need to boot everything for each one.
@@ -330,5 +337,5 @@ the use case with the `IT` suffix: `PlaceOrderIT`.
 ## Source
 
 Adapted from `skills/java-testing/skill.md` in McKratt/claude-skills. The use case test setup (Testcontainers 2.0 with
-`@ServiceConnection`, `WireMockExtension`, failsafe) follows the `examples/` projects of this plugin, which are built by
+`@ServiceConnection`, `wiremock-spring-boot`, failsafe) follows the `examples/` projects of this plugin, which are built by
 CI in the plugin repository.
