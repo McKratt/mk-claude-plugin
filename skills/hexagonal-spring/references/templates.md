@@ -498,6 +498,11 @@ class OrderShippingRestAdapterConfiguration {
 }
 ```
 
+Always start from the injected, auto-configured `RestClient.Builder` (dependency `spring-boot-starter-restclient`), never
+from `RestClient.builder()`, `RestClient.create()` or a raw `java.net.http.HttpClient`. Add
+`org.apache.httpcomponents.client5:httpclient5` (runtime): Spring Boot then uses Apache HttpClient, which also avoids the
+h2c upgrade problem of the JDK client against plain-HTTP servers such as WireMock.
+
 The base URL comes from `application.yaml`:
 
 ```yaml
@@ -725,7 +730,7 @@ class PlaceOrderIT {
 
     @RegisterExtension
     static WireMockExtension shipping = WireMockExtension.newInstance()
-            .options(wireMockConfig().dynamicPort().http2PlainDisabled(true)).build();
+            .options(wireMockConfig().dynamicPort()).build();
 
     @DynamicPropertySource
     static void shippingApi(DynamicPropertyRegistry registry) {
@@ -749,8 +754,8 @@ class PlaceOrderIT {
     void should_store_the_order_and_request_a_shipment_when_the_order_is_valid() throws Exception {
         shipping.stubFor(WireMock.post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(202)));
 
-        // POST /orders with the JDK HttpClient (or RestClient / WebTestClient) ...
-        // assertEquals(201, response.statusCode());
+        // POST /orders with a RestClient built from the injected RestClient.Builder ...
+        // assertEquals(201, response.getStatusCode().value());
         // assertEquals(1, jdbcTemplate.queryForObject("select count(*) from orders", Integer.class));
         shipping.verify(1, postRequestedFor(urlEqualTo("/shipments")));
     }

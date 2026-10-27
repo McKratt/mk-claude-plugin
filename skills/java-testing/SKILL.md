@@ -104,7 +104,7 @@ class PlaceOrderIT {
 
     @RegisterExtension
     static WireMockExtension shipping = WireMockExtension.newInstance()
-            .options(wireMockConfig().dynamicPort().http2PlainDisabled(true))
+            .options(wireMockConfig().dynamicPort())
             .build();
 
     @DynamicPropertySource
@@ -165,16 +165,24 @@ Rules for these tests:
 - **Verify what you send**: `shipping.verify(...)` on the path, headers and body the adapter produces.
 - **Failure paths are part of the use case**: stub 4xx/5xx and timeouts, and assert the consequence (HTTP status, rollback).
 - **Name clash**: if the test class has its own `post(path, json)` helper, call WireMock's as `WireMock.post(...)`.
-- **Plain HTTP and the JDK `HttpClient`**: Spring's `RestClient` can use the JDK `HttpClient`, which tries an HTTP/2
-  cleartext (h2c) upgrade on plain HTTP. WireMock's embedded Jetty fails on that upgrade for requests with a body (the
-  application then gets an `EOFException` or a 500). This is a known upstream problem, not a WireMock "HTTP/1 only"
-  limit: see wiremock/wiremock issues #2637 and #3577. Disable HTTP/2 over plain text on the WireMock side:
-  `wireMockConfig().dynamicPort().http2PlainDisabled(true)`. Do not pin HTTP/1.1 in the production client for a test
-  problem. (Alternative workaround: a `JdkClientHttpRequestFactory` built on an `HttpClient` limited to
-  `HttpClient.Version.HTTP_1_1`.)
+- **Outgoing HTTP always goes through Spring's `RestClient`, built from the auto-configured `RestClient.Builder`**
+  (inject it; dependency `spring-boot-starter-restclient`). Never `java.net.http.HttpClient`, `RestClient.builder()`
+  or `RestClient.create()` in application code: the injected builder carries Spring Boot's message converters, request
+  factory and global `spring.http.clients.*` settings
+  ([Spring Boot reference](https://docs.spring.io/spring-boot/reference/io/rest-client.html)). An ArchUnit rule can
+  enforce it (no dependency on `java.net.http..`, `org.apache.hc..`, `okhttp3..`).
+- **Put Apache HttpClient 5 on the classpath** (`org.apache.httpcomponents.client5:httpclient5`, version managed by
+  Spring Boot). Boot picks the first client it finds: Apache, Jetty, Reactor Netty, the JDK client, then
+  `HttpURLConnection`. Without Apache, `RestClient` uses the JDK `HttpClient`, which tries an HTTP/2 cleartext (h2c)
+  upgrade on plain HTTP; WireMock's embedded Jetty fails on it for requests with a body (`Received RST_STREAM` /
+  `EOFException`, a 500 in the application). We hit this in CI even with the injected builder. It is a known upstream
+  problem, not a WireMock "HTTP/1 only" limit (wiremock/wiremock issues #2637 and #3577). Apache HttpClient does not
+  attempt the upgrade. Alternative: `wireMockConfig().http2PlainDisabled(true)` on the WireMock side.
 - **WireMock version**: use the 3.x line (3.13.2 at the time of writing, per wiremock.org); 4.x is still in beta and announces breaking changes.
-- **Calling the application**: the examples use the JDK `HttpClient`; Spring Boot 4's `RestTestClient` is a more
-  fluent alternative aimed at the running server.
+- **Calling the application from a test**: also a `RestClient`, built from the injected `RestClient.Builder` with
+  `.baseUrl("http://localhost:" + port)` and `.defaultStatusHandler(HttpStatusCode::isError, (request, response) -> { })`
+  so that 4xx/5xx are results to assert on instead of exceptions. Spring Boot 4's `RestTestClient` is a more fluent
+  alternative aimed at the running server.
 - **`@MockBean` no longer exists in Spring Boot 4**: use `@MockitoBean`, and in a use case test only for a collaborator
   that truly cannot be reached otherwise.
 

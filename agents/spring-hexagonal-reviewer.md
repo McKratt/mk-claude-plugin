@@ -44,6 +44,8 @@ You never modify files.
 8. **Different components.** Components share no classes. A component reaches another only through the target's
    public API (for example REST, or messaging), via an outgoing port and an adapter in `adapter/out/<target-component>/`.
    Any import of another component's classes is a violation, unless the user documented an in-process API.
+   Outgoing HTTP must use Spring's `RestClient` created from the injected `RestClient.Builder`: a use of
+   `java.net.http.HttpClient`, `RestClient.builder()` / `RestClient.create()` or another raw HTTP client in application code is a violation.
 9. **Common.** `<component>/common` holds utilities usable anywhere in the component. It must not depend on `application`, `adapter`
    or any `configuration` package, and it is not shared with other components.
 10. **Configuration.** General Spring Java config (`@Configuration` classes) lives in a `configuration` package directly under the
