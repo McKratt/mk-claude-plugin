@@ -1,12 +1,12 @@
 ---
 name: hexagonal-spring
-description: Scaffold or restructure a Spring Boot project on Java 25 using hexagonal architecture as taught in "Get Your Hands Dirty on Clean Architecture" (Tom Hombergs). Use when the user wants to start a new Spring Boot service, add a use case or bounded context, or reorganise packages into ports and adapters.
+description: Scaffold or restructure a Spring Boot project on Java 25 using hexagonal architecture as taught in "Get Your Hands Dirty on Clean Architecture" (Tom Hombergs). Use when the user wants to start a new Spring Boot service, add a use case or bounded context, or reorganize packages into ports and adapters.
 ---
 
 # Hexagonal Spring Boot (Java 25)
 
 Structure Spring Boot projects with the ports-and-adapters style from
-*Get Your Hands Dirty on Clean Architecture*. The business domain sits at the centre;
+*Get Your Hands Dirty on Clean Architecture*. The business domain sits at the center;
 web, persistence and other technology are replaceable adapters around it.
 
 Ready-to-adapt code lives in [references/templates.md](references/templates.md). Read it before generating code.
@@ -87,7 +87,7 @@ components and the `@SpringBootApplication` class:
    **Interface names follow the usual Java conventions** ([Baeldung](https://www.baeldung.com/java-interface-naming-conventions)):
    a noun for a polymorphic interface (`List`, `Connection`) or an adjective for a capability (`Comparable`), the
    implementation combining its specialty with the interface name. **Never** a `Port` or `UseCase` suffix, an `I`
-   prefix or an `Impl` suffix. Ports are recognised by their package, not by their name.
+   prefix or an `Impl` suffix. Ports are recognized by their package, not by their name.
 4. **Each use case has its own input model** (a command). It validates itself in its constructor.
    Use a Java `record` with a compact constructor. Business rules belong in the domain model, not in the command.
 5. **Services** in `application/domain/service` implement the incoming port, orchestrate domain objects and
@@ -166,7 +166,7 @@ Complement with, in this order of importance:
 - **Architecture**: an ArchUnit test that fails the build on dependency violations (template provided). It needs no
   server, so it is a `*Test` run by surefire.
 - **Services**: unit tests with mocked outgoing ports (Mockito, BDD notation), only for branching logic that is awkward to reach through the use case tests.
-- **Slice tests** (`@WebMvcTest`, `@DataJpaTest`): only when a use case test cannot reach the behaviour, for example
+- **Slice tests** (`@WebMvcTest`, `@DataJpaTest`): only when a use case test cannot reach the behavior, for example
   exhaustive request validation or a complex query. They are the exception, not the default.
 
 ## 6. Assembly and boundaries
