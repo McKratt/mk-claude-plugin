@@ -141,14 +141,29 @@ https://start.spring.io rather than relying on memory.
 
 ## 5. Testing
 
-Mirror the book's testing split:
+**Priority: `@SpringBootTest` tests that cover a whole use case**, not slice tests. Each important use case gets tests
+that start the application on a random port, call it through its real entry point (HTTP) and check the outcome:
 
-- **Domain**: plain unit tests, no Spring.
-- **Services**: unit tests with mocked outgoing ports (Mockito).
-- **Web adapter**: `@WebMvcTest` slice tests with a mocked use case.
-- **Persistence adapter**: `@DataJpaTest` (or Testcontainers when behaviour depends on the real database).
-- **System**: a few `@SpringBootTest` tests through the whole stack.
-- **Architecture**: an ArchUnit test that fails the build on dependency violations (template provided).
+- the database is a **real one in a container** (Testcontainers, same engine as production, wired with
+  `@ServiceConnection`), never an embedded substitute such as H2;
+- **third-party services are mocked with WireMock** (start a `WireMockExtension` on a dynamic port and register its
+  URL with `@DynamicPropertySource`); verify the requests the adapter sends, and test the failure cases (for example a
+  503 must roll the transaction back);
+- clean the tables in `@BeforeEach` so tests do not depend on each other;
+- put the shared setup in a composed annotation (for example `@IntegrationTest`) and a `@TestConfiguration` with the container.
+
+**These tests run in the Maven integration-test phase.** Every test that starts the web server is named `*IT` and is
+run by `maven-failsafe-plugin` (`integration-test` and `verify` goals), which runs after packaging. Surefire keeps the
+fast `*Test` tests (default naming). `mvn verify` runs both.
+
+Complement with, in this order of importance:
+
+- **Domain**: plain unit tests, no Spring (entities, value objects, self-validating commands).
+- **Architecture**: an ArchUnit test that fails the build on dependency violations (template provided). It needs no
+  server, so it is a `*Test` run by surefire.
+- **Services**: unit tests with mocked outgoing ports (Mockito), only for branching logic that is awkward to reach through the use case tests.
+- **Slice tests** (`@WebMvcTest`, `@DataJpaTest`): only when a use case test cannot reach the behaviour, for example
+  exhaustive request validation or a complex query. They are the exception, not the default.
 
 ## 6. Assembly and boundaries
 
@@ -168,8 +183,8 @@ Mirror the book's testing split:
 3. Create the package tree for the first component and one **vertical slice** from `templates.md`
    (use case, command, service, outgoing port, web adapter, persistence adapter, mappers).
 4. Add the ArchUnit test and its dependency (latest release on Maven Central).
-5. Add tests for each layer following section 5.
-6. Run the build (`./mvnw verify` or `./gradlew build`) and fix failures.
+5. Add the use case integration tests (`*IT`, Testcontainers, WireMock) and the domain unit tests following section 5.
+6. Run the build (`./mvnw verify` or `./gradlew build`; Docker must be running for Testcontainers) and fix failures.
 7. Report: the package tree, the shortcuts taken, and what remains to implement.
 
 ## 8. When adding to an existing project

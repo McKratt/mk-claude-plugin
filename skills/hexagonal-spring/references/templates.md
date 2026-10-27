@@ -674,6 +674,97 @@ class ClockConfiguration {
 
 Place other general `@Configuration` classes here (web, security, serialization). Component-specific wiring stays inside its component.
 
+## Use case integration test (`*IT`)
+
+Priority test type. Build setup (Maven): `org.postgresql:postgresql` (runtime), and in test scope
+`spring-boot-testcontainers`, `org.testcontainers:testcontainers-postgresql` and, for third-party APIs,
+`org.wiremock:wiremock-standalone` (the standalone artifact avoids a Jetty clash with Spring Boot). Failsafe runs the
+`*IT` classes in the integration-test phase:
+
+```xml
+<plugin>
+  <groupId>org.apache.maven.plugins</groupId>
+  <artifactId>maven-failsafe-plugin</artifactId>
+  <executions>
+    <execution>
+      <goals>
+        <goal>integration-test</goal>
+        <goal>verify</goal>
+      </goals>
+    </execution>
+  </executions>
+</plugin>
+```
+
+```java
+package com.example.shop;
+
+@TestConfiguration(proxyBeanMethods = false)
+class PostgresTestConfiguration {
+
+    @Bean
+    @ServiceConnection
+    PostgreSQLContainer postgres() {   // org.testcontainers.postgresql.PostgreSQLContainer
+        return new PostgreSQLContainer("postgres:17-alpine");
+    }
+}
+
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(PostgresTestConfiguration.class)
+@interface IntegrationTest {
+}
+```
+
+```java
+package com.example.shop;
+
+@IntegrationTest
+class PlaceOrderIT {
+
+    @RegisterExtension
+    static WireMockExtension shipping = WireMockExtension.newInstance()
+            .options(wireMockConfig().dynamicPort()).build();
+
+    @DynamicPropertySource
+    static void shippingApi(DynamicPropertyRegistry registry) {
+        registry.add("shipping.base-url", shipping::baseUrl);
+    }
+
+    @Value("${local.server.port}")
+    int port;
+
+    @Autowired
+    JdbcTemplate jdbcTemplate;
+
+    @BeforeEach
+    void cleanDatabase() {
+        jdbcTemplate.execute("delete from order_lines");
+        jdbcTemplate.execute("delete from orders");
+    }
+
+    @Test
+    void placesAnOrderStoresItAndRequestsAShipment() throws Exception {
+        shipping.stubFor(post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(202)));
+
+        // POST /orders with the JDK HttpClient (or RestClient / WebTestClient) ...
+        // assertEquals(201, response.statusCode());
+        // assertEquals(1, jdbcTemplate.queryForObject("select count(*) from orders", Integer.class));
+        shipping.verify(1, postRequestedFor(urlEqualTo("/shipments")));
+    }
+
+    @Test
+    void storesNothingWhenTheShippingApiFails() throws Exception {
+        shipping.stubFor(post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(503)));
+
+        // POST /orders ... assertEquals(500, ...) and assertEquals(0, count of orders)
+    }
+}
+```
+
+See `examples/single-context` (WireMock) and `examples/multi-context` (two contexts through one HTTP call) in the plugin repository for complete, CI-validated versions.
+
 ## Test examples
 
 Service test with a mocked outgoing port:

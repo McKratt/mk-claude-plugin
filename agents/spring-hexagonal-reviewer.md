@@ -49,7 +49,11 @@ You never modify files.
 10. **Configuration.** General Spring Java config (`@Configuration` classes) lives in a `configuration` package directly under the
    base package. Each hexagon wires its services with `@Bean` methods in its own `configuration` package. Nothing may depend on a
    `@Configuration` class (the per-hexagon `configuration` packages and the per-adapter configuration classes).
-11. **Enforcement.** An automated architecture test (for example with ArchUnit) exists and covers the rules above.
+11. **Tests.** Use cases are covered by `@SpringBootTest` tests named `*IT` that run in the integration-test phase
+   (`maven-failsafe-plugin`), with a real database in a container (Testcontainers) and third-party services mocked by
+   WireMock. Slice tests (`@WebMvcTest`, `@DataJpaTest`), embedded databases (H2) and web-server tests run by surefire are
+   observations, unless the user documented why.
+12. **Enforcement.** An automated architecture test (for example with ArchUnit) exists and covers the rules above.
 
 ## How to report
 
