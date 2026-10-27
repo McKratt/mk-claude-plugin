@@ -17,7 +17,7 @@ Ask only for what is missing, in one short message:
 
 - Group ID, artifact ID and **base package** (for example `com.example.shop`)
 - **Component** name (for example `sales`) and its first **bounded context** name (for example `order`)
-- Build tool: Maven (default) or Gradle
+- Build tool: Maven (default) or Gradle (the templates and the test setup are written for Maven; translate them for Gradle)
 - Persistence: Spring Data JPA (default), none, or other
 - Single module (default) or multi-module (see section 6)
 
@@ -121,7 +121,7 @@ components and the `@SpringBootApplication` class:
    through a raw HTTP client (`java.net.http`, Apache or OkHttp types in application code).
    There is **no compile-time dependency** between the two components. If the API technology is not stated, ask the user.
 10. **`common`** holds utilities usable anywhere in the component (all its contexts and layers). It depends on
-    neither `application` nor `adapter`. It is not shared between different components (rule 9).
+    neither `application`, `adapter` nor any `configuration` package. It is not shared between different components (rule 9).
 11. **Wiring of a hexagon.** A `@Configuration` class in `<hexagon>/configuration/` declares one `@Bean` per service
     (for example `orderPlacement(OrderStore store)` returning `new PlaceOrderService(store)`). Adapters are created
     in their own adapter packages (rule 7). Nothing depends on a `@Configuration` class.
@@ -156,7 +156,7 @@ that start the application on a random port, call it through its real entry poin
 - clean the tables in `@BeforeEach` so tests do not depend on each other;
 - put the shared setup in a composed annotation (for example `@IntegrationTest`) and a `@TestConfiguration` with the container.
 
-**These tests run in the Maven integration-test phase.** Every test that starts the web server is named `*IT` and is
+**These tests run in the Maven integration-test phase.** Every `@SpringBootTest` (and so every test that starts the web server) is named `*IT` and is
 run by `maven-failsafe-plugin` (`integration-test` and `verify` goals), which runs after packaging. Surefire keeps the
 fast `*Test` tests (default naming). `mvn verify` runs both.
 
@@ -165,7 +165,7 @@ Complement with, in this order of importance:
 - **Domain**: plain unit tests, no Spring (entities, value objects, self-validating commands).
 - **Architecture**: an ArchUnit test that fails the build on dependency violations (template provided). It needs no
   server, so it is a `*Test` run by surefire.
-- **Services**: unit tests with mocked outgoing ports (Mockito), only for branching logic that is awkward to reach through the use case tests.
+- **Services**: unit tests with mocked outgoing ports (Mockito, BDD notation), only for branching logic that is awkward to reach through the use case tests.
 - **Slice tests** (`@WebMvcTest`, `@DataJpaTest`): only when a use case test cannot reach the behaviour, for example
   exhaustive request validation or a complex query. They are the exception, not the default.
 
@@ -193,8 +193,8 @@ Complement with, in this order of importance:
 
 ## 8. When adding to an existing project
 
-- Add a new use case: new use case interface + command in `port/in`, service in `application/domain/service` (plus its `@Bean` in `configuration`),
-  any new outgoing interface in `port/out`, then adapter changes. Never skip the port.
+- Add a new use case: new incoming port + command in `port/in`, service in `application/domain/service` (plus its `@Bean` in
+  `<hexagon>/configuration`), any new outgoing port in `port/out`, then adapter changes. Never skip the port.
 - Add a new bounded context: new `<component>/<context>/` package with the same internal layout. If the component had a
   single context until now, move its packages from `<component>/` into `<component>/<context>/`.
 - Connect two bounded contexts of the same component: follow rule 8 (outgoing port + `*DomainAdapter`).

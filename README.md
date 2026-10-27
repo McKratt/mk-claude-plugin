@@ -8,14 +8,16 @@ Personal Claude Code plugin: skills and agents for Java / Spring Boot projects.
 | ----- | ------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------- |
 | Skill | `hexagonal-spring`  | `/mk-claude-plugin:hexagonal-spring` | Structure a Spring Boot / Java 25 project following *Get Your Hands Dirty on Clean Architecture* |
 | Skill | `java-testing` | `/mk-claude-plugin:java-testing` | Java tests: use case `@SpringBootTest` tests first (Testcontainers, WireMock, failsafe), unit tests, slice tests as the exception |
-| Agent | `spring-hexagonal-reviewer` | `mk-claude-plugin:spring-hexagonal-reviewer` | Read-only review of a codebase against the same architecture rules                        |
+| Agent | `spring-hexagonal-reviewer` | `mk-claude-plugin:spring-hexagonal-reviewer` | Read-only review of a codebase against the `hexagonal-spring` rules                       |
 
 ## Layout
 
 ```
 .claude-plugin/plugin.json      # manifest
 skills/<name>/SKILL.md          # one directory per skill
+skills/<name>/references/       # supporting files a skill reads on demand (for example templates.md)
 agents/<name>.md                # one file per subagent
+examples/                       # runnable Spring Boot projects that follow the skills, built by CI
 ```
 
 ## Develop and test locally
@@ -36,7 +38,7 @@ This plugin follows [Semantic Versioning](https://semver.org/). The version live
 - **MINOR**: new skill or agent, backwards-compatible
 - **PATCH**: backwards-compatible fixes and wording improvements
 
-Current version: `0.0.1` (initial development, anything may change).
+Current version: `0.0.2` (initial development, anything may change).
 
 ## References
 

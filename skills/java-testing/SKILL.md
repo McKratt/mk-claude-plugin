@@ -44,7 +44,7 @@ application, and do it at the network boundary (WireMock), not by replacing a be
 
 ## Maven: unit tests in `test`, server tests in `integration-test`
 
-Any test that starts the web server (and, in practice, any `@SpringBootTest`) is named `*IT` and **runs in the Maven
+Every `@SpringBootTest` (and so every test that starts the web server) is named `*IT` and **runs in the Maven
 integration-test phase** through failsafe. Surefire keeps the fast `*Test` classes. `mvn verify` runs both; `mvn test`
 runs only the fast ones.
 
@@ -89,6 +89,7 @@ class PostgresTestConfiguration {
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureRestTestClient   // binds the injected RestTestClient to the running server
 @Import(PostgresTestConfiguration.class)
 @interface IntegrationTest {
 }
@@ -121,7 +122,7 @@ class PlaceOrderIT {
     }
 
     @Test
-    void should_store_the_order_and_request_a_shipment_when_the_order_is_valid() throws Exception {
+    void should_store_the_order_and_request_a_shipment_when_the_order_is_valid() {
         // Arrange
         shipping.stubFor(WireMock.post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(202)));
 
@@ -138,7 +139,7 @@ class PlaceOrderIT {
     }
 
     @Test
-    void should_store_nothing_when_the_shipping_api_is_down() throws Exception {
+    void should_store_nothing_when_the_shipping_api_fails() {
         // Arrange
         shipping.stubFor(WireMock.post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(503)));
 
@@ -171,10 +172,11 @@ Rules for these tests:
   ([Spring Boot reference](https://docs.spring.io/spring-boot/reference/io/rest-client.html)). An ArchUnit rule can
   enforce it (no dependency on `java.net.http..`, `org.apache.hc..`, `okhttp3..`).
 - **JDK client, no extra HTTP library**: without Apache/Jetty/Reactor Netty on the classpath, `RestClient` uses the JDK
-  `HttpClient`, and that is fine. With a plain `WireMockExtension` (wiremock-standalone) we saw `Received RST_STREAM`
-  on POSTs with a body in CI (Spring Boot 4.1, WireMock 3.13.2), a known upstream h2c issue (wiremock/wiremock #2637,
-  #3577) that `http2PlainDisabled(true)` or Apache HttpClient avoid. With `wiremock-spring-boot` 4.0.9 the same tests
-  pass in CI with none of these; we did not investigate why.
+  `HttpClient`, and that is fine with `wiremock-spring-boot`: the example tests pass in CI with it (4.0.9, Spring Boot
+  4.1). Known pitfall: with a plain `WireMockExtension` (wiremock-standalone 3.13.2) instead, POSTs with a body failed
+  in CI with `Received RST_STREAM`, an upstream h2c issue ([wiremock/wiremock #2637](https://github.com/wiremock/wiremock/issues/2637),
+  [#3577](https://github.com/wiremock/wiremock/issues/3577)); `http2PlainDisabled(true)` on WireMock or Apache
+  HttpClient on the classpath avoided it. Why `wiremock-spring-boot` is not affected has not been investigated.
 - **Calling the application from a test**: Spring Boot 4's `RestTestClient`. Annotate the test (here, the
   `@IntegrationTest` meta-annotation) with `@AutoConfigureRestTestClient`
   (`org.springframework.boot.resttestclient.autoconfigure`) and inject `RestTestClient`; with
@@ -184,8 +186,8 @@ Rules for these tests:
   If you need the port itself, inject it with `@LocalServerPort` (`org.springframework.boot.test.web.server`), not
   `@Value("${local.server.port}")`.
 - **Modular test starters (Spring Boot 4)**: besides `spring-boot-starter-test`, add the starter of each technology the
-  tests touch: `spring-boot-starter-webmvc-test`, `spring-boot-starter-data-jpa-test`. CI of the examples validates
-  these coordinates.
+  tests touch: `spring-boot-starter-webmvc-test`, `spring-boot-starter-data-jpa-test`. The example projects build with
+  these coordinates in CI.
 - **`@MockBean` no longer exists in Spring Boot 4**: use `@MockitoBean`, and in a use case test only for a collaborator
   that truly cannot be reached otherwise.
 
@@ -197,17 +199,15 @@ Every test method follows AAA with explicit comments when the sections are non-t
 
 ```java
 @Test
-void should_return_order_when_id_exists() {
+void should_save_the_order_when_it_is_placed() {
     // Arrange
-    var order = new Order("123", Status.PENDING);
-    given(orderRepository.findById("123")).willReturn(Optional.of(order));
+    var command = new PlaceOrderCommand(List.of(new PlaceOrderCommand.Line("SKU-1", 2)));
 
     // Act
-    var result = orderService.findById("123");
+    var orderId = placeOrderService.placeOrder(command);
 
     // Assert
-    assertThat(result).isPresent();
-    assertThat(result.get().getStatus()).isEqualTo(Status.PENDING);
+    then(orderStore).should().save(argThat(order -> order.id().equals(orderId)));
 }
 ```
 
@@ -219,13 +219,13 @@ void should_return_order_when_id_exists() {
 
 ```java
 @ExtendWith(MockitoExtension.class)
-class OrderServiceTest {
+class PlaceOrderServiceTest {
 
     @Mock
-    private OrderRepository orderRepository;
+    private OrderStore orderStore;            // outgoing port: mocked
 
     @InjectMocks
-    private OrderService orderService;
+    private PlaceOrderService placeOrderService;
 }
 ```
 
@@ -318,7 +318,7 @@ should_throw_not_found_exception_when_id_missing
 should_send_email_when_order_is_shipped
 ```
 
-Class names: `OrderService` is tested by `OrderServiceTest`; a use case test that starts the application is named after
+Class names: `PlaceOrderService` is tested by `PlaceOrderServiceTest`; a use case test that starts the application is named after
 the use case with the `IT` suffix: `PlaceOrderIT`.
 
 ---
