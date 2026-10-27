@@ -25,7 +25,7 @@ JAVA
   return $rc
 }
 
-for project in single-context multi-context; do
+for project in single-context multi-context helidon-single-context; do
   echo "== $project"
   if probe "$project" "@lombok.Getter" "ProbeAllowed" "    private String value = \"x\";"; then
     echo "  OK    @Getter compiles"
