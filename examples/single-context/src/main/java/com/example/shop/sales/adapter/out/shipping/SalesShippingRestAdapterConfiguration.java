@@ -10,7 +10,11 @@ import org.springframework.web.client.RestClient;
 class SalesShippingRestAdapterConfiguration {
 
     @Bean
-    ShipmentRequester shipmentRequester(@Value("${shipping.base-url}") String baseUrl) {
-        return new ShippingRestAdapter(RestClient.builder().baseUrl(baseUrl).build());
+    ShipmentRequester shipmentRequester(RestClient.Builder restClientBuilder,
+            @Value("${shipping.base-url}") String baseUrl) {
+        // Always start from the auto-configured builder: it carries Spring Boot's message converters,
+        // request factory and global settings (spring.http.clients.*). Never RestClient.builder() or
+        // a raw java.net.http.HttpClient.
+        return new ShippingRestAdapter(restClientBuilder.baseUrl(baseUrl).build());
     }
 }

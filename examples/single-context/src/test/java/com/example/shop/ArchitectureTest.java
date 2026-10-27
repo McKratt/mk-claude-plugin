@@ -102,6 +102,13 @@ class ArchitectureTest {
     static final ArchRule nobodyDependsOnConfigurationClasses = noClasses()
             .should().dependOnClassesThat().areAnnotatedWith(Configuration.class);
 
+    // Outgoing HTTP goes through Spring's RestClient (built from the auto-configured RestClient.Builder),
+    // never through a raw HTTP client.
+    @ArchTest
+    static final ArchRule noRawHttpClient = noClasses()
+            .should().dependOnClassesThat().resideInAnyPackage("java.net.http..", "org.apache.hc..", "okhttp3..")
+            .orShould().dependOnClassesThat().haveFullyQualifiedName("java.net.HttpURLConnection");
+
     @ArchTest
     static final ArchRule portsAreInterfaces = classes()
             .that().resideInAPackage("..application.port..")
