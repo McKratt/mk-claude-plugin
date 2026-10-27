@@ -33,7 +33,7 @@ class OrderToInvoiceIT {
         return http.send(request, HttpResponse.BodyHandlers.ofString());
     }
     @Test
-    void placingAnOrderCreatesAnInvoiceInTheBillingContext() throws Exception {
+    void should_create_an_invoice_in_billing_when_an_order_is_placed() throws Exception {
         var created = post("/orders",
                 "{\"lines\":[{\"sku\":\"SKU-1\",\"quantity\":2},{\"sku\":\"SKU-2\",\"quantity\":1}]}");
         assertEquals(201, created.statusCode());
@@ -49,14 +49,14 @@ class OrderToInvoiceIT {
     }
 
     @Test
-    void answers404WhenThereIsNoInvoice() throws Exception {
+    void should_answer_404_when_there_is_no_invoice() throws Exception {
         var response = get("/invoices/by-order/00000000-0000-0000-0000-000000000000");
 
         assertEquals(404, response.statusCode());
     }
 
     @Test
-    void rejectsAnOrderWithoutLines() throws Exception {
+    void should_return_400_when_the_order_has_no_lines() throws Exception {
         assertEquals(400, post("/orders", "{\"lines\":[]}").statusCode());
     }
 }

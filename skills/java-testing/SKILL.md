@@ -104,7 +104,7 @@ class PlaceOrderIT {
 
     @RegisterExtension
     static WireMockExtension shipping = WireMockExtension.newInstance()
-            .options(wireMockConfig().dynamicPort())
+            .options(wireMockConfig().dynamicPort().http2PlainDisabled(true))
             .build();
 
     @DynamicPropertySource
@@ -165,8 +165,14 @@ Rules for these tests:
 - **Verify what you send**: `shipping.verify(...)` on the path, headers and body the adapter produces.
 - **Failure paths are part of the use case**: stub 4xx/5xx and timeouts, and assert the consequence (HTTP status, rollback).
 - **Name clash**: if the test class has its own `post(path, json)` helper, call WireMock's as `WireMock.post(...)`.
-- **HTTP/1.1 with WireMock**: when the application calls WireMock through the JDK `HttpClient`, pin
-  `HttpClient.Version.HTTP_1_1`; with the default HTTP/2 upgrade attempt, a POST to WireMock failed with a 500 in our CI.
+- **Plain HTTP and the JDK `HttpClient`**: Spring's `RestClient` can use the JDK `HttpClient`, which tries an HTTP/2
+  cleartext (h2c) upgrade on plain HTTP. WireMock's embedded Jetty fails on that upgrade for requests with a body (the
+  application then gets an `EOFException` or a 500). This is a known upstream problem, not a WireMock "HTTP/1 only"
+  limit: see wiremock/wiremock issues #2637 and #3577. Disable HTTP/2 over plain text on the WireMock side:
+  `wireMockConfig().dynamicPort().http2PlainDisabled(true)`. Do not pin HTTP/1.1 in the production client for a test
+  problem. (Alternative workaround: a `JdkClientHttpRequestFactory` built on an `HttpClient` limited to
+  `HttpClient.Version.HTTP_1_1`.)
+- **WireMock version**: use the 3.x line (3.13.2 at the time of writing, per wiremock.org); 4.x is still in beta and announces breaking changes.
 - **Calling the application**: the examples use the JDK `HttpClient`; Spring Boot 4's `RestTestClient` is a more
   fluent alternative aimed at the running server.
 - **`@MockBean` no longer exists in Spring Boot 4**: use `@MockitoBean`, and in a use case test only for a collaborator

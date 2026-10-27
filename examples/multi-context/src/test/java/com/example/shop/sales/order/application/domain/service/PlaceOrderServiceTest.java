@@ -26,7 +26,7 @@ class PlaceOrderServiceTest {
     private final PlaceOrderService service = new PlaceOrderService(orderStore, invoiceIssuer, CLOCK);
 
     @Test
-    void savesTheOrderWithTheCurrentInstant() {
+    void should_save_the_order_with_the_current_instant_when_it_is_placed() {
         var orderId = service.placeOrder(
                 new PlaceOrderCommand(List.of(new PlaceOrderCommand.Line("SKU-1", 2))));
 
@@ -37,7 +37,7 @@ class PlaceOrderServiceTest {
     }
 
     @Test
-    void asksForAnInvoiceOncePlaced() {
+    void should_ask_for_an_invoice_when_the_order_is_placed() {
         service.placeOrder(new PlaceOrderCommand(List.of(new PlaceOrderCommand.Line("SKU-1", 1))));
 
         verify(invoiceIssuer).createInvoiceFor(any(Order.class));

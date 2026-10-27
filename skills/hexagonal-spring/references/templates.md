@@ -725,7 +725,7 @@ class PlaceOrderIT {
 
     @RegisterExtension
     static WireMockExtension shipping = WireMockExtension.newInstance()
-            .options(wireMockConfig().dynamicPort()).build();
+            .options(wireMockConfig().dynamicPort().http2PlainDisabled(true)).build();
 
     @DynamicPropertySource
     static void shippingApi(DynamicPropertyRegistry registry) {
@@ -739,14 +739,14 @@ class PlaceOrderIT {
     JdbcTemplate jdbcTemplate;
 
     @BeforeEach
-    void cleanDatabase() {
+    void clean_database() {
         jdbcTemplate.execute("delete from order_lines");
         jdbcTemplate.execute("delete from orders");
     }
 
     // WireMock.post is qualified because the test class has its own post(path, json) helper.
     @Test
-    void placesAnOrderStoresItAndRequestsAShipment() throws Exception {
+    void should_store_the_order_and_request_a_shipment_when_the_order_is_valid() throws Exception {
         shipping.stubFor(WireMock.post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(202)));
 
         // POST /orders with the JDK HttpClient (or RestClient / WebTestClient) ...
@@ -756,7 +756,7 @@ class PlaceOrderIT {
     }
 
     @Test
-    void storesNothingWhenTheShippingApiFails() throws Exception {
+    void should_store_nothing_when_the_shipping_api_fails() throws Exception {
         shipping.stubFor(WireMock.post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(503)));
 
         // POST /orders ... assertEquals(500, ...) and assertEquals(0, count of orders)
@@ -786,7 +786,7 @@ class PlaceOrderServiceTest {
     private final PlaceOrderService service = new PlaceOrderService(orderStore);
 
     @Test
-    void savesTheOrder() {
+    void should_save_the_order_when_it_is_placed() {
         service.placeOrder(new PlaceOrderCommand(List.of(new PlaceOrderCommand.Line("SKU-1", 2))));
 
         verify(orderStore).save(any());
@@ -806,7 +806,7 @@ import org.junit.jupiter.api.Test;
 class PlaceOrderCommandTest {
 
     @Test
-    void rejectsNonPositiveQuantity() {
+    void should_reject_the_line_when_quantity_is_not_positive() {
         assertThrows(IllegalArgumentException.class, () -> new PlaceOrderCommand.Line("SKU-1", 0));
     }
 }
