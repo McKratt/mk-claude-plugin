@@ -1,7 +1,7 @@
 {
   "name": "mk-claude-plugin",
   "description": "Personal Claude Code plugin: skills and agents for Java / Spring Boot projects",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "author": {
     "name": "McKratt"
   }

@@ -431,7 +431,7 @@ class OrderBillingDomainAdapterConfiguration {
 }
 ```
 
-`PlaceOrderService` then takes a `InvoiceIssuer` in its constructor and calls
+`PlaceOrderService` then takes an `InvoiceIssuer` in its constructor and calls
 `invoiceIssuer.createInvoiceFor(order)` after saving. It never sees `billing`.
 
 ## Calling another component through its public API (REST example)
@@ -460,7 +460,7 @@ import org.springframework.web.client.RestClient;
 class ShippingRestAdapter implements ShipmentRequester {
 
     // Shape of the request expected by the shipping API, owned by this adapter.
-    record ShipmentRequest(UUID orderId) {}
+    record ShipmentRequest(UUID orderId, int itemCount) {}
 
     private final RestClient restClient;
 
@@ -470,9 +470,10 @@ class ShippingRestAdapter implements ShipmentRequester {
 
     @Override
     public void requestShipmentFor(Order order) {
+        int itemCount = order.lines().stream().mapToInt(Order.Line::quantity).sum();
         restClient.post()
                 .uri("/shipments")
-                .body(new ShipmentRequest(order.id().value()))
+                .body(new ShipmentRequest(order.id().value(), itemCount))
                 .retrieve()
                 .toBodilessEntity();
     }
@@ -511,6 +512,9 @@ shipping:
 
 The path, payload and base URL above are placeholders: use the real contract published by the target component.
 Keep the `RestClient` details, error mapping and retries inside this adapter.
+
+As with `InvoiceIssuer`, `PlaceOrderService` takes a `ShipmentRequester` in its constructor and calls
+`shipmentRequester.requestShipmentFor(order)` after saving; the use case test below relies on it.
 
 ## Architecture test (ArchUnit)
 
@@ -635,6 +639,13 @@ class ArchitectureTest {
             .that().resideOutsideOfPackage("com.example.shop..configuration..")
             .should().dependOnClassesThat().resideInAPackage("com.example.shop..configuration..");
 
+    // Outgoing HTTP goes through Spring's RestClient (built from the auto-configured RestClient.Builder),
+    // never through a raw HTTP client.
+    @ArchTest
+    static final ArchRule noRawHttpClient = noClasses()
+            .should().dependOnClassesThat().resideInAnyPackage("java.net.http..", "org.apache.hc..", "okhttp3..")
+            .orShould().dependOnClassesThat().haveFullyQualifiedName("java.net.HttpURLConnection");
+
     // One pair of rules per source -> target bounded context, for example order -> billing.
     @ArchTest
     static final ArchRule orderReachesBillingOnlyThroughItsDomainAdapter = noClasses()
@@ -680,10 +691,11 @@ Place other general `@Configuration` classes here (web, security, serialization)
 
 ## Use case integration test (`*IT`)
 
-Priority test type. Build setup (Maven): `org.postgresql:postgresql` (runtime), and in test scope
-`spring-boot-testcontainers`, `org.testcontainers:testcontainers-postgresql` and, for third-party APIs,
-`org.wiremock.integrations:wiremock-spring-boot` (WireMock's Spring Boot integration). Failsafe runs the
-`*IT` classes in the integration-test phase:
+Priority test type; the `java-testing` skill of this plugin has the full rules. Build setup (Maven):
+`org.postgresql:postgresql` (runtime), and in test scope `spring-boot-starter-test`, `spring-boot-starter-webmvc-test`,
+`spring-boot-starter-data-jpa-test`, `spring-boot-testcontainers`, `org.testcontainers:testcontainers-postgresql` and,
+for third-party APIs, `org.wiremock.integrations:wiremock-spring-boot` (WireMock's Spring Boot integration). Failsafe
+runs the `*IT` classes in the integration-test phase:
 
 ```xml
 <plugin>
@@ -716,6 +728,7 @@ class PostgresTestConfiguration {
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureRestTestClient   // org.springframework.boot.resttestclient.autoconfigure
 @Import(PostgresTestConfiguration.class)
 @interface IntegrationTest {
 }
@@ -746,7 +759,7 @@ class PlaceOrderIT {
     }
 
     @Test
-    void should_store_the_order_and_request_a_shipment_when_the_order_is_valid() throws Exception {
+    void should_store_the_order_and_request_a_shipment_when_the_order_is_valid() {
         shipping.stubFor(WireMock.post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(202)));
 
         client.post().uri("/orders").contentType(MediaType.APPLICATION_JSON)
@@ -754,15 +767,20 @@ class PlaceOrderIT {
                 .exchange()
                 .expectStatus().isCreated()
                 .expectBody().jsonPath("$.id").isNotEmpty();
-        // assertEquals(1, jdbcTemplate.queryForObject("select count(*) from orders", Integer.class));
-        shipping.verify(1, postRequestedFor(urlEqualTo("/shipments")));
+        assertThat(jdbcTemplate.queryForObject("select count(*) from orders", Integer.class)).isEqualTo(1);
+        shipping.verify(1, postRequestedFor(urlEqualTo("/shipments"))
+                .withRequestBody(matchingJsonPath("$.itemCount", equalTo("2"))));
     }
 
     @Test
-    void should_store_nothing_when_the_shipping_api_fails() throws Exception {
+    void should_store_nothing_when_the_shipping_api_fails() {
         shipping.stubFor(WireMock.post(urlEqualTo("/shipments")).willReturn(aResponse().withStatus(503)));
 
-        // POST /orders ... .expectStatus().is5xxServerError(), then assert that no order was stored
+        client.post().uri("/orders").contentType(MediaType.APPLICATION_JSON)
+                .body("{\"lines\":[{\"sku\":\"SKU-1\",\"quantity\":1}]}")
+                .exchange()
+                .expectStatus().is5xxServerError();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from orders", Integer.class)).isZero();
     }
 }
 ```
@@ -771,28 +789,40 @@ See `examples/single-context` (WireMock) and `examples/multi-context` (two conte
 
 ## Test examples
 
+Unit tests follow the `java-testing` skill: AssertJ assertions and BDD Mockito notation.
+
 Service test with a mocked outgoing port:
 
 ```java
 package com.example.shop.sales.order.application.domain.service;
 
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.then;
 
+import com.example.shop.sales.order.application.domain.model.Order;
 import com.example.shop.sales.order.application.port.in.PlaceOrderCommand;
 import com.example.shop.sales.order.application.port.out.OrderStore;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
+@ExtendWith(MockitoExtension.class)
 class PlaceOrderServiceTest {
 
-    private final OrderStore orderStore = mock(OrderStore.class);
-    private final PlaceOrderService service = new PlaceOrderService(orderStore);
+    @Mock
+    private OrderStore orderStore;
+
+    @InjectMocks
+    private PlaceOrderService service;
 
     @Test
     void should_save_the_order_when_it_is_placed() {
         service.placeOrder(new PlaceOrderCommand(List.of(new PlaceOrderCommand.Line("SKU-1", 2))));
 
-        verify(orderStore).save(any());
+        then(orderStore).should().save(any(Order.class));
     }
 }
 ```
@@ -802,7 +832,7 @@ Command validation test:
 ```java
 package com.example.shop.sales.order.application.port.in;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.Test;
 
@@ -810,7 +840,9 @@ class PlaceOrderCommandTest {
 
     @Test
     void should_reject_the_line_when_quantity_is_not_positive() {
-        assertThrows(IllegalArgumentException.class, () -> new PlaceOrderCommand.Line("SKU-1", 0));
+        assertThatThrownBy(() -> new PlaceOrderCommand.Line("SKU-1", 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("quantity must be positive");
     }
 }
 ```

@@ -5,7 +5,7 @@ Two runnable Spring Boot 4.1 / Java 25 projects that follow the `hexagonal-sprin
 | Project | Shows |
 | --- | --- |
 | `single-context/` | Component `sales` with one bounded context: the context level is omitted from the packages. |
-| `multi-context/` | Component `sales` with contexts `order` and `billing`, joined by `BillingDomainAdapter` (rule 8). |
+| `multi-context/` | Component `sales` with contexts `order` and `billing`, joined by `BillingDomainAdapter` (rule 8 of `hexagonal-spring`). |
 
 ## Run
 
@@ -22,6 +22,7 @@ Two kinds of tests, two Maven phases:
 - `*IT` (failsafe, `integration-test` phase): `@SpringBootTest` tests that start the web server and test a whole use
   case against a real PostgreSQL in a container (Testcontainers). `single-context` also replaces the third-party shipping API
   with WireMock (`PlaceOrderIT`).
+
 `ArchitectureRulesDetectViolationsTest` feeds deliberately bad fixture classes (in test sources, package `archfixtures`)
 to the rules, so a rule that silently stops matching makes the build fail.
 
