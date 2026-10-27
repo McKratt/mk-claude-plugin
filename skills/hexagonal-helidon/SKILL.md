@@ -10,7 +10,8 @@ Structure Helidon SE projects with the ports-and-adapters style from
 web, persistence and other technology are replaceable adapters around it.
 
 Ready-to-adapt code lives in [references/templates.md](references/templates.md). Read it before generating code.
-A runnable project built from these templates is `examples/helidon-single-context/` in this plugin's repository.
+Runnable projects built from these templates are in this plugin's repository: `examples/helidon-single-context/` (one
+bounded context) and `examples/helidon-multi-context/` (contexts `order` and `billing` joined by a `DomainAdapter`).
 
 ## 0. Helidon version: the LTS line, not the latest
 
@@ -48,6 +49,8 @@ in the component:
 ```
 <base>/<component>/
 ├── common/                      # utilities usable anywhere in the component (shared by its contexts)
+│   └── persistence/             # several contexts only: the shared DbTransactions (rule 10)
+├── configuration/               # several contexts only: <Component>Configuration wires the contexts (rule 8)
 └── [<context>/]                 # one hexagon per bounded context (level omitted for a single context)
 ```
 
@@ -106,6 +109,9 @@ main class may depend on them.
    **A service owns its transaction boundary through the outgoing port `TransactionRunner`**
    (`<T> T inTransaction(Supplier<T> work)`): commit when the work returns, rollback when it throws. The persistence
    adapter implements it with `DbClient.transaction()` (rule 13). Queries that need no transaction do not use it.
+   With several bounded contexts on one database, each context keeps its own `TransactionRunner` port, and their
+   adapters delegate to the component's shared `DbTransactions` (rule 10), so a use case that calls another context
+   keeps **one** transaction: the callee joins the caller's, as with Spring's default propagation.
    This port is a convention of this skill, not of the book, which uses Spring's `@Transactional`.
 6. **Adapters own their models.** Web request/response records and SQL rows are separate from domain classes,
    with explicit mappers. Choose the mapping strategy per boundary (no mapping, two-way, full, one-way)
@@ -123,8 +129,12 @@ main class may depend on them.
    (`application/port/out`, in its own language and types). It is implemented by a `<Target>DomainAdapter` in
    `adapter/out/<target-context>/`, which calls the target context's **incoming port** (a use case interface) directly and
    converts the source's types to the target's command. Nothing else of the target context may be used: not its
-   domain, services, outgoing ports or adapters. The component's configuration creates the target's use case first
-   and passes it to the source's `*AdapterConfiguration`.
+   domain, services, outgoing ports or adapters. Wiring: with several contexts, each `<Context>Configuration` is an
+   instance class (its constructor creates adapters and services; it exposes the incoming ports other contexts need
+   and a `routing(HttpRules)` method), and `<component>/configuration/<Component>Configuration` creates the target
+   context first, then the source context with the target's incoming port, which the source passes to its
+   `<Context><Target>DomainAdapterConfiguration`. The source's configuration package may import that incoming port;
+   nothing else of the source may import the target.
 9. **Joining two different components** goes through the **public API of the target component**, for example a REST
    service, but it can be another technology (messaging, gRPC...). The source defines an outgoing port in its
    `application/port/out`, implemented by an adapter in `adapter/out/<target-component>/` (for example
@@ -135,6 +145,10 @@ main class may depend on them.
    There is **no compile-time dependency** between the two components. If the API technology is not stated, ask the user.
 10. **`common`** holds utilities usable anywhere in the component (all its contexts and layers). It depends on
     neither `application`, `adapter` nor any `configuration` package. It is not shared between different components (rule 9).
+    **Exception for several contexts on one database: `common/persistence/DbTransactions`**, a public class holding the
+    component's single `DbClient` and binding the open `DbTransaction` to the current thread. It is technology, so only
+    persistence adapters and configuration classes may use it, never `application` (enforced by ArchUnit). This is a
+    conscious shortcut of this skill: without it, two package-private transaction runners could not share a transaction.
 11. **Wiring of a hexagon.** `<hexagon>/configuration/<Hexagon>Configuration` is a `public final` class with a static
     method (for example `routing(HttpRules rules, Config config, Clock clock)`) that, in this order: creates the outgoing
     adapters through their `*AdapterConfiguration` (passing the relevant `Config` node, such as `config.get("db")`),
@@ -155,9 +169,13 @@ main class may depend on them.
     - Pass an `OffsetDateTime` (UTC) for a `TIMESTAMP WITH TIME ZONE` column.
     The schema is applied by Flyway (`flyway-core` + `flyway-database-<engine>`) from the persistence adapter
     configuration, before the `DbClient` is used. Do not use embedded substitutes such as H2.
+    With several contexts, **each context owns a database schema** (for example `sales_order`, `sales_billing`) and
+    migrates it with its own Flyway (`.schemas("sales_billing").locations("classpath:db/migration/billing")`, which
+    also keeps its history table in that schema); its SQL names the schema, and no foreign key crosses contexts.
 14. **Naming**: interfaces as in rule 3, `*Service`, `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`,
-    `<Target>RestAdapter` (or the technology used), `DbClientTransactionRunner`, `<Hexagon><Kind>AdapterConfiguration`,
-    `<Hexagon>Configuration`, `<App>Configuration`, `<App>Application`.
+    `<Target>RestAdapter` (or the technology used), `DbClientTransactionRunner`, `DbTransactions`,
+    `<Hexagon><Kind>AdapterConfiguration`, `<Hexagon>Configuration`, `<Component>Configuration`, `<App>Configuration`,
+    `<App>Application`.
 
 ## 4. Java 25 guidelines
 
@@ -219,7 +237,8 @@ Complement with, in this order of importance:
   `<Hexagon>Configuration`), any new outgoing port in `port/out`, then adapter changes. Never skip the port.
 - Add a new bounded context: new `<component>/<context>/` package with the same internal layout and its own
   `<Context>Configuration`. If the component had a single context until now, move its packages from `<component>/` into
-  `<component>/<context>/`.
+  `<component>/<context>/`, add `<component>/configuration/<Component>Configuration`, move the transaction binding to
+  `<component>/common/persistence/DbTransactions` and give each context its own database schema.
 - Connect two bounded contexts of the same component: follow rule 8 (outgoing port + `*DomainAdapter`).
 - Connect two different components: follow rule 9 (outgoing port + adapter calling the target's public API with `WebClient`).
 - To check conformance afterwards, delegate to the `helidon-hexagonal-reviewer` agent.

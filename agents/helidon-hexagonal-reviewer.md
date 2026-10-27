@@ -50,6 +50,11 @@ You never modify files.
    another context of the same component only through an outgoing port of its own, implemented by a
    `*DomainAdapter` in `adapter/out/<target-context>/` that uses the target's incoming port (the use case interface and its command)
    and nothing else of the target (no domain, services, outgoing ports or adapters). Anything else is a violation.
+   The source context's `configuration` package may import the target's incoming port to wire the `*DomainAdapter`;
+   that is not a finding. A cross-context call must run in the caller's transaction: each context's
+   `TransactionRunner` adapter delegating to the component's shared `common/persistence/DbTransactions` is the expected
+   design; separate transaction holders per context (a callee committing on its own) are a finding.
+   Each context owns its database schema; a foreign key or SQL referencing another context's schema is a finding.
    A component with a single bounded context omits the context level in its package names; that is not a finding.
 9. **Different components.** Components share no classes. A component reaches another only through the target's
    public API (for example REST, or messaging), via an outgoing port and an adapter in `adapter/out/<target-component>/`.
@@ -58,7 +63,9 @@ You never modify files.
    `java.net.HttpURLConnection`, Apache HttpClient or OkHttp in application code is a violation. An adapter that ignores
    the response status (Helidon's `WebClient` does not throw on 4xx/5xx) is a finding.
 10. **Common.** `<component>/common` holds utilities usable anywhere in the component. It must not depend on `application`, `adapter`
-    or any `configuration` package, and it is not shared with other components.
+    or any `configuration` package, and it is not shared with other components. The one accepted technical class is
+    `common/persistence/DbTransactions` (shared DbClient and transaction of a component with several contexts): its use
+    outside persistence adapters and configuration classes, in particular from `application`, is a violation.
 11. **Configuration and wiring.** There is no container: `<hexagon>/configuration/<Hexagon>Configuration` creates the
     adapters (through the `*AdapterConfiguration` classes) and the services, and registers the web adapters;
     `<base>/configuration` holds the application-wide assembly called by `main`. Only configuration classes and the main

@@ -5,6 +5,7 @@ updates:
       - /examples/single-context
       - /examples/multi-context
       - /examples/helidon-single-context
+      - /examples/helidon-multi-context
     schedule:
       interval: weekly
     groups:
