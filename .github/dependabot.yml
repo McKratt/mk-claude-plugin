@@ -4,6 +4,7 @@ updates:
     directories:
       - /examples/single-context
       - /examples/multi-context
+      - /examples/helidon-single-context
     schedule:
       interval: weekly
     groups:

@@ -1,0 +1,17 @@
+server:
+  port: 8080
+  host: 0.0.0.0
+
+# Helidon DbClient (JDBC + Hikari). Environment variables override these keys, for example DB_CONNECTION_URL.
+db:
+  source: jdbc
+  connection:
+    url: jdbc:postgresql://localhost:5432/shop
+    username: shop
+    password: shop
+
+shipping:
+  base-url: http://localhost:8081
+  client:
+    connect-timeout-millis: 2000
+    read-timeout-millis: 5000

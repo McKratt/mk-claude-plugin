@@ -1,6 +1,6 @@
 {
   "name": "mckratt-plugins",
-  "description": "McKratt's Claude Code plugins for Java / Spring Boot projects",
+  "description": "McKratt's Claude Code plugins for Java projects (Spring Boot, Helidon SE)",
   "owner": {
     "name": "McKratt"
   },
@@ -8,7 +8,7 @@
     {
       "name": "mk-claude-plugin",
       "source": "./",
-      "description": "Skills and agents for Java / Spring Boot projects"
+      "description": "Skills and agents for Java projects (Spring Boot, Helidon SE)"
     }
   ]
 }
