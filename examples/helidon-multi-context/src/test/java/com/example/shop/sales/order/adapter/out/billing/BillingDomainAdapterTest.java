@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.mock;
 import static org.mockito.BDDMockito.then;
 
-import com.example.shop.sales.order.application.domain.model.Order;
+import com.example.shop.sales.order.domain.Order;
 import com.example.shop.sales.billing.application.port.in.CreateInvoiceCommand;
 import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
 import java.time.Instant;

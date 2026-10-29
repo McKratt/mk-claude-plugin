@@ -1,6 +1,6 @@
 package com.example.shop.sales.order.configuration;
 
-import com.example.shop.sales.order.application.domain.service.PlaceOrderService;
+import com.example.shop.sales.order.application.service.PlaceOrderService;
 import com.example.shop.sales.order.application.port.in.OrderPlacement;
 import com.example.shop.sales.order.application.port.out.InvoiceIssuer;
 import com.example.shop.sales.order.application.port.out.OrderStore;

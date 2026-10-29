@@ -1,13 +1,19 @@
 ---
 name: hexagonal-helidon
-description: Scaffold or restructure a Helidon SE 4.x (LTS) project on Java 25 using hexagonal architecture as taught in "Get Your Hands Dirty on Clean Architecture" (Tom Hombergs). Use when the user wants to start a new Helidon service, add a use case or bounded context to one, or reorganize a Helidon codebase into ports and adapters.
+description: Scaffold or restructure a Helidon SE 4.x (LTS) project on Java 25 using hexagonal architecture as taught in "Get Your Hands Dirty on Clean Architecture" (Tom Hombergs, first-edition package layout), with application services distinct from domain services as in "Implementing Domain-Driven Design" (Vaughn Vernon). Use when the user wants to start a new Helidon service, add a use case or bounded context to one, or reorganize a Helidon codebase into ports and adapters.
 ---
 
 # Hexagonal Helidon SE (4.x LTS, Java 25)
 
 Structure Helidon SE projects with the ports-and-adapters style from
-*Get Your Hands Dirty on Clean Architecture*. The business domain sits at the center;
-web, persistence and other technology are replaceable adapters around it.
+*Get Your Hands Dirty on Clean Architecture*, in the package layout of its **first edition**. The business domain
+sits at the center; web, persistence and other technology are replaceable adapters around it.
+
+Following *Implementing Domain-Driven Design* (Vaughn Vernon), **application services** (in `application/service`)
+run the use cases and own the cross-cutting concerns (transactions, security), while the **domain** stays plain Java;
+**domain services** (in `domain/service`) are optional and exist only for a domain operation that spans several
+aggregates. The layout is the same as in the `hexagonal-spring` skill of this plugin, whose "Source" section explains
+the departure from the book's second edition.
 
 Ready-to-adapt code lives in [references/templates.md](references/templates.md). Read it before generating code.
 Runnable projects built from these templates are in this plugin's repository: `examples/helidon-single-context/` (one
@@ -58,13 +64,13 @@ Layout of a hexagon (`<hexagon>` = `<base>/<component>/[<context>/]`):
 
 ```
 <hexagon>/
+├── domain/                      # entities, value objects, domain rules (plain Java)
+│   └── service/                 # optional domain services: a domain operation spanning several aggregates
 ├── application/
-│   ├── domain/
-│   │   ├── model/               # entities, value objects, domain rules (plain Java)
-│   │   └── service/             # *Service: implements incoming ports, uses outgoing ports
-│   └── port/
-│       ├── in/                  # incoming ports (use cases) + one command per use case
-│       └── out/                 # outgoing ports, including TransactionRunner (rule 5)
+│   ├── port/
+│   │   ├── in/                  # incoming ports (use cases) + one command per use case
+│   │   └── out/                 # outgoing ports, including TransactionRunner (rule 5)
+│   └── service/                 # application services *Service: implement incoming ports, own transactions
 ├── adapter/                     # each adapter package exposes one public *AdapterConfiguration (rule 7)
 │   ├── in/web/                  # *Controller implementing Helidon's HttpService, web models
 │   ├── out/persistence/         # persistence adapter (DbClient), DbClientTransactionRunner, SQL
@@ -87,13 +93,15 @@ main class may depend on them.
 
 ## 3. Rules
 
-1. **Dependencies point inward.** `adapter` → `application` (ports and `domain/service`) → `domain/model`.
-   - `domain/model` depends on nothing but `common`: no ports, services or adapters.
-   - **The whole `application` package is plain Java**: no `io.helidon..` type, no container API (`jakarta.inject`,
+1. **Dependencies point inward.** `adapter` → `application` (ports and services) → `domain`.
+   - `domain` (including `domain/service`) depends on nothing but `common`: no `application`, no adapters.
+   - **`domain` and `application` are plain Java**: no `io.helidon..` type, no container API (`jakarta.inject`,
      `jakarta.enterprise`, `jakarta.ws.rs`), no ORM (JPA, Hibernate...), no Jackson, JSON-P/JSON-B or other JSON
-     library. Unlike Spring's `@Transactional`, there is **no exception**: the transaction boundary goes through a port (rule 5).
-   - **Lombok and JSpecify are allowed in the whole application** (compile-time annotations only). Mark the domain and
-     port packages `@NullMarked` in a `package-info.java` and annotate the rare nullable value with `@Nullable`.
+     library. The cross-cutting concerns of the application services go through outgoing ports: the transaction
+     boundary through `TransactionRunner` (rule 5), and likewise, when needed, the current user for authorization.
+   - **Lombok and JSpecify are allowed in `domain` and `application`** (compile-time annotations only). Mark the
+     domain, service and port packages `@NullMarked` in a `package-info.java` and annotate the rare nullable value
+     with `@Nullable`.
 2. **One narrow incoming port per use case** (an interface in `port/in`), named as a noun for what it offers
    (for example `OrderPlacement`, `InvoiceLookup`). Avoid "broad" service interfaces.
 3. **Outgoing ports** (interfaces in `port/out`) are named as a noun for the role they play, for example
@@ -103,16 +111,21 @@ main class may depend on them.
    with the interface name. **Never** a `Port` or `UseCase` suffix, an `I` prefix or an `Impl` suffix.
    Ports are recognized by their package, not by their name.
 4. **Each use case has its own input model** (a command). It validates itself in its constructor.
-   Use a Java `record` with a compact constructor. Business rules belong in the domain model, not in the command.
-5. **Services** in `application/domain/service` implement the incoming port and orchestrate domain objects and
-   outgoing ports. They are `public`, carry no annotation, and are created with `new` by the hexagon's configuration.
-   **A service owns its transaction boundary through the outgoing port `TransactionRunner`**
+   Use a Java `record` with a compact constructor. Business rules belong in the domain, not in the command.
+5. **Application services** in `application/service` implement the incoming port, orchestrate domain objects and
+   outgoing ports, and own the cross-cutting concerns of the use case; they hold no business rule. They are `public`,
+   carry no annotation, and are created with `new` by the hexagon's configuration.
+   **Domain services** in `domain/service` are optional: create one only for a domain operation that does not belong
+   to a single entity or value object, typically one spanning several aggregates. They are stateless plain Java,
+   named after the operation, use only `domain` types and know nothing of transactions, security or ports.
+   **An application service owns its transaction boundary through the outgoing port `TransactionRunner`**
    (`<T> T inTransaction(Supplier<T> work)`): commit when the work returns, rollback when it throws. The persistence
    adapter implements it with `DbClient.transaction()` (rule 13). Queries that need no transaction do not use it.
    With several bounded contexts on one database, each context keeps its own `TransactionRunner` port, and their
    adapters delegate to the component's shared `DbTransactions` (rule 10), so a use case that calls another context
    keeps **one** transaction: the callee joins the caller's, as with Spring's default propagation.
-   This port is a convention of this skill, not of the book, which uses Spring's `@Transactional`.
+   This port is a convention of this skill, not of the book, which uses Spring's `@Transactional` on the
+   application service.
 6. **Adapters own their models.** Web request/response records and SQL rows are separate from domain classes,
    with explicit mappers. Choose the mapping strategy per boundary (no mapping, two-way, full, one-way)
    and record any shortcut consciously, for example in an `ARCHITECTURE.md` or an ADR.
@@ -180,10 +193,10 @@ main class may depend on them.
 ## 4. Java 25 guidelines
 
 - Records for commands, web models, value objects and IDs.
-- Lombok may be used in `application/domain` (for example `@Getter` on entities, `@RequiredArgsConstructor` on services
+- Lombok may be used in `domain` and `application` (for example `@Getter` on entities, `@RequiredArgsConstructor` on services
   and adapters). Declare it `provided` with the annotation processor path configured; its version is not managed by the
   Helidon BOM. `@Builder`, `@Data` and `@Value` are banned through `lombok.config` (`flagUsage = error`), as in the examples.
-- JSpecify (`org.jspecify:jspecify`, version not managed by the Helidon BOM) in `application`: `@NullMarked` on packages.
+- JSpecify (`org.jspecify:jspecify`, version not managed by the Helidon BOM) in `domain` and `application`: `@NullMarked` on packages.
 - Sealed interfaces and pattern-matching `switch` for closed domain variants (for example result types).
 - `var` for obvious local types only; keep signatures explicit.
 - Do not enable preview features unless the user asks.
@@ -214,7 +227,7 @@ Complement with, in this order of importance:
 - **Domain**: plain unit tests (entities, value objects, self-validating commands).
 - **Architecture**: an ArchUnit test (template provided) plus a test that feeds deliberately bad fixture classes to the
   rules, so a rule that silently stops matching fails the build. It needs no server: a `*Test` run by surefire.
-- **Services**: unit tests with mocked outgoing ports (Mockito, BDD notation) and a `TransactionRunner` that simply
+- **Application services**: unit tests with mocked outgoing ports (Mockito, BDD notation) and a `TransactionRunner` that simply
   runs the work, only for branching logic that is awkward to reach through the use case tests.
 - **`@RoutingTest`** (no socket, `DirectClient`): only when a use case test cannot reach the behavior, for example
   exhaustive request validation. It is the exception, not the default.
@@ -225,7 +238,8 @@ Complement with, in this order of importance:
 2. Create the project: if the working directory is empty, write the `pom.xml` (parent `helidon-se`) and the main class by hand.
    If the project exists, inspect it first and do not overwrite files.
 3. Create the package tree for the first component and one **vertical slice** from `templates.md`
-   (use case, command, service, outgoing ports, `TransactionRunner`, web adapter, persistence adapter, configurations).
+   (use case, command, application service, outgoing ports, `TransactionRunner`, web adapter, persistence adapter,
+   configurations).
 4. Add the ArchUnit tests and their dependency (latest release on Maven Central).
 5. Add the use case integration tests (`*IT`, Testcontainers, WireMock) and the domain unit tests following section 5.
 6. Run the build (`mvn verify`; Docker must be running for Testcontainers) and fix failures.
@@ -233,8 +247,9 @@ Complement with, in this order of importance:
 
 ## 7. When adding to an existing project
 
-- Add a new use case: new incoming port + command in `port/in`, service in `application/domain/service` (created in
-  `<Hexagon>Configuration`), any new outgoing port in `port/out`, then adapter changes. Never skip the port.
+- Add a new use case: new incoming port + command in `port/in`, application service in `application/service` (created
+  in `<Hexagon>Configuration`), any new outgoing port in `port/out`, then adapter changes. Never skip the port.
+  Business rules go in `domain` (or a domain service in `domain/service` when they span several aggregates).
 - Add a new bounded context: new `<component>/<context>/` package with the same internal layout and its own
   `<Context>Configuration`. If the component had a single context until now, move its packages from `<component>/` into
   `<component>/<context>/`, add `<component>/configuration/<Component>Configuration`, move the transaction binding to
@@ -245,8 +260,11 @@ Complement with, in this order of importance:
 
 ## Sources
 
-- Architecture: Tom Hombergs, *Get Your Hands Dirty on Clean Architecture*, 2nd edition (Packt); the package layout and
-  rules are the ones of the `hexagonal-spring` skill of this plugin, adapted to a container-less framework.
+- Architecture: Tom Hombergs, *Get Your Hands Dirty on Clean Architecture* (Packt), package layout of the first
+  edition (book repository `thombergs/buckpal`, branch `single-module`: `application/service`, `application/port/in|out`,
+  `domain` without `model`); application services versus domain services from Vaughn Vernon, *Implementing
+  Domain-Driven Design* (Addison-Wesley, 2013), chapters "Application" and "Services". The rules are the ones of the
+  `hexagonal-spring` skill of this plugin, adapted to a container-less framework.
 - Helidon LTS status: `CHANGELOG.md` of `helidon-io/helidon` on `main` (Helidon 27 entry: "Helidon 4 is considered an
   LTS release. Helidon 29 will be the next LTS release."), and the 4.5.6 entry ("A minimum of Java 21 is required to use
   Helidon 4. Java 25 is recommended.").

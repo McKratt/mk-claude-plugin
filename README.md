@@ -6,7 +6,7 @@ Personal Claude Code plugin: skills and agents for Java projects (Spring Boot, H
 
 | Type  | Name                | Invocation                         | Purpose                                                                                   |
 | ----- | ------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------- |
-| Skill | `hexagonal-spring`  | `/mk-claude-plugin:hexagonal-spring` | Structure a Spring Boot / Java 25 project following *Get Your Hands Dirty on Clean Architecture* |
+| Skill | `hexagonal-spring`  | `/mk-claude-plugin:hexagonal-spring` | Structure a Spring Boot / Java 25 project following *Get Your Hands Dirty on Clean Architecture* (first-edition layout) and Vernon's application vs. domain services |
 | Skill | `java-testing` | `/mk-claude-plugin:java-testing` | Java tests: use case `@SpringBootTest` tests first (Testcontainers, WireMock, failsafe), unit tests, slice tests as the exception |
 | Skill | `hexagonal-helidon` | `/mk-claude-plugin:hexagonal-helidon` | Structure a Helidon SE 4.x (LTS) / Java 25 project following the same book, wired by hand without a container |
 | Agent | `spring-hexagonal-reviewer` | `mk-claude-plugin:spring-hexagonal-reviewer` | Read-only review of a codebase against the `hexagonal-spring` rules                       |
@@ -62,7 +62,8 @@ Current version: `0.0.3` (initial development, anything may change).
 ## References
 
 - Claude Code docs: [Create a plugin](https://code.claude.com/docs/en/plugins/create.md), [Create a marketplace](https://code.claude.com/docs/en/plugin-marketplaces.md), [Host and maintain a marketplace](https://code.claude.com/docs/en/plugins/host-marketplace.md), [Subagents](https://code.claude.com/docs/en/sub-agents.md)
-- Tom Hombergs, *Get Your Hands Dirty on Clean Architecture*, 2nd edition (Packt)
+- Tom Hombergs, *Get Your Hands Dirty on Clean Architecture* (Packt): package layout of the first edition, as in the book repository [`thombergs/buckpal`, branch `single-module`](https://github.com/thombergs/buckpal/tree/single-module)
+- Vaughn Vernon, *Implementing Domain-Driven Design* (Addison-Wesley, 2013): application services vs. domain services
 - Java interface naming: [Baeldung, Java interface naming conventions](https://www.baeldung.com/java-interface-naming-conventions)
 - Spring Boot: [REST clients (`RestClient`)](https://docs.spring.io/spring-boot/reference/io/rest-client.html), [Testing Spring Boot applications](https://docs.spring.io/spring-boot/reference/testing/spring-boot-applications.html), [4.0 Migration Guide](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide)
 - Helidon 4.x (LTS): [documentation](https://helidon.io/docs/v4/) (Markdown sources in [`helidon-io/helidon`, tag 4.5.6, `docs/`](https://github.com/helidon-io/helidon/tree/4.5.6/docs)), [examples, branch `helidon-4.x`](https://github.com/helidon-io/helidon-examples/tree/helidon-4.x), LTS status in the [CHANGELOG](https://github.com/helidon-io/helidon/blob/main/CHANGELOG.md) (Helidon 27 entry)

@@ -6,29 +6,38 @@ model: inherit
 ---
 
 You review Java / Spring Boot code for conformance with the hexagonal architecture
-described in *Get Your Hands Dirty on Clean Architecture* (Tom Hombergs), as applied by the `hexagonal-spring`
-skill of this plugin. The checks below follow that skill's rules but are numbered differently; cite the check
+described in *Get Your Hands Dirty on Clean Architecture* (Tom Hombergs), in the package layout of its first
+edition, with application services distinct from domain services as in *Implementing Domain-Driven Design*
+(Vaughn Vernon), as applied by the `hexagonal-spring` skill of this plugin. The checks below follow that skill's rules but are numbered differently; cite the check
 by its name (for example "Ports") rather than by its number.
 You never modify files.
 
 ## What to check
 
-1. **Dependency direction.** `adapter` depends on `application`; `application/domain/service` and the ports depend on
-   `application/domain/model`; `application/domain/model` depends on nothing but `common`. Flag any import that points outward:
-   - `domain/model` importing ports, services, adapters or anything from `org.springframework..`;
-   - anything in `application/domain` importing an ORM (`jakarta.persistence..`, `javax.persistence..`, Hibernate and similar),
-     Jackson or any JSON library;
-   - `domain/service` importing an adapter, or using a Spring annotation other than `@Transactional`
-     (`@Service` and `@Component` on a service are violations; `@Transactional` on a service class is a violation too, it
-     belongs on methods, with `readOnly = true` for queries);
-   - an `application` class importing an `adapter` class.
-   Lombok and JSpecify (`org.jspecify..`) are explicitly allowed in the domain and are not findings.
+1. **Dependency direction.** `adapter` depends on `application` (ports and `application/service`); `application`
+   depends on `domain`; `domain` (including `domain/service`) depends on nothing but `common`. Flag any import that points outward:
+   - anything in `domain` importing `application`, an adapter or anything from `org.springframework..` (including
+     `@Transactional`, which belongs to the application services);
+   - anything in `domain` or `application` importing an ORM (`jakarta.persistence..`, `javax.persistence..`, Hibernate
+     and similar), Jackson or any JSON library;
+   - anything in `application` using Spring beyond the annotations of cross-cutting concerns (`@Transactional`, method
+     security such as `@PreAuthorize` or `@Secured`): `@Service` and `@Component` on an application service are
+     violations; `@Transactional` on a service class is a violation too, it belongs on methods, with
+     `readOnly = true` for queries;
+   - an `application` class importing an `adapter` class;
+   - `common` importing `domain`, `application`, an adapter or a configuration class.
+   Lombok and JSpecify (`org.jspecify..`) are explicitly allowed in `domain` and `application` and are not findings.
+   The second edition's layout (`application/domain/model`, `application/domain/service`) is an observation: the skill
+   uses the first edition's `domain` and `application/service`.
 2. **Ports.** Incoming ports (use cases) live in `application/port/in`;
    outgoing ports live in `application/port/out`. Each use case has its own narrow interface. Interfaces are named
    as a noun or an adjective following Java conventions (https://www.baeldung.com/java-interface-naming-conventions):
    a `Port` or `UseCase` suffix, an `I` prefix or an `Impl` suffix is a violation.
-3. **Services.** Classes in `application/domain/service` implement incoming ports and use outgoing ports.
-   They contain orchestration, not HTTP or persistence details, and are public so they can be wired with `@Bean`.
+3. **Services.** Application services in `application/service` implement incoming ports and use outgoing ports.
+   They contain orchestration and the cross-cutting concerns (transactions, security), not business rules, HTTP or
+   persistence details, and are public so they can be wired with `@Bean`. A business rule coded in an application
+   service instead of the domain is a finding. Domain services in `domain/service` are optional; one that holds no
+   domain logic spanning several aggregates (a pass-through, or one doing transactions or calling ports) is a finding.
 4. **Input models.** Each use case has its own command / input model that validates itself on construction.
 5. **Adapters.** `adapter/in/web` holds controllers and web models; `adapter/out/persistence`
    holds the persistence adapter, JPA entities and mappers. Adapters do not depend on each other.

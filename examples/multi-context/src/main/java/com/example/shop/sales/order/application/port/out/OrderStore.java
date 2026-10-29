@@ -1,6 +1,6 @@
 package com.example.shop.sales.order.application.port.out;
 
-import com.example.shop.sales.order.application.domain.model.Order;
+import com.example.shop.sales.order.domain.Order;
 
 public interface OrderStore {
 

@@ -2,8 +2,8 @@ package com.example.shop.sales.billing.configuration;
 
 import com.example.shop.sales.billing.adapter.in.web.BillingWebAdapterConfiguration;
 import com.example.shop.sales.billing.adapter.out.persistence.BillingPersistenceAdapterConfiguration;
-import com.example.shop.sales.billing.application.domain.service.CreateInvoiceService;
-import com.example.shop.sales.billing.application.domain.service.FindInvoiceByOrderService;
+import com.example.shop.sales.billing.application.service.CreateInvoiceService;
+import com.example.shop.sales.billing.application.service.FindInvoiceByOrderService;
 import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
 import com.example.shop.sales.billing.application.port.in.InvoiceLookup;
 import com.example.shop.sales.common.persistence.DbTransactions;

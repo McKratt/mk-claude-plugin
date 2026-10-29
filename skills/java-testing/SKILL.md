@@ -31,7 +31,7 @@ In order of priority:
    Cover the main path of every use case, plus its important failure paths (validation error, third party down,
    rollback).
 2. **Unit tests (`*Test`)** for logic that does not need Spring: domain objects, value objects, self-validating commands,
-   mappers, and services with branching logic that is awkward to reach through the use case tests.
+   mappers, and application services with branching logic that is awkward to reach through the use case tests.
 3. **Architecture tests (ArchUnit, `*Test`)**: no server needed, so surefire runs them.
 4. **Slice tests (`@WebMvcTest`, `@DataJpaTest`)**: only when a use case test cannot reach the behavior reasonably,
    for example exhaustive request-validation combinations or a complex query with many edge cases. Say why in the test

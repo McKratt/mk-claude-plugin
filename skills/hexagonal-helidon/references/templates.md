@@ -7,7 +7,8 @@ insert it: `com.example.shop.sales.order.application...`. Utilities usable anywh
 
 Every Java file below is copied from `examples/helidon-single-context/` or, for the section on joining bounded
 contexts, `examples/helidon-multi-context/` of this plugin's repository, which CI builds and tests (`mvn verify`,
-Java 25, Helidon 4.5.6, PostgreSQL in Testcontainers, WireMock).
+Java 25, Helidon 4.5.6, PostgreSQL in Testcontainers, WireMock), except the domain service section, marked
+*not in the examples*.
 
 ## Build (`pom.xml`)
 
@@ -294,13 +295,13 @@ CREATE TABLE order_lines (
 
 ## Null-safety (JSpecify)
 
-Mark the domain and port packages (`application/domain/model`, `application/domain/service`, `application/port/in`,
+Mark the domain and port packages (`domain`, `application/service`, `application/port/in`,
 `application/port/out`) as `@NullMarked`:
 
 ```java
-// sales/application/domain/model/package-info.java
+// sales/domain/package-info.java
 @NullMarked
-package com.example.shop.sales.application.domain.model;
+package com.example.shop.sales.domain;
 
 import org.jspecify.annotations.NullMarked;
 ```
@@ -341,13 +342,13 @@ public final class Preconditions {
 }
 ```
 
-## Domain (`sales/application/domain/model`)
+## Domain (`sales/domain`)
 
 Plain Java: Lombok and JSpecify only.
 
 ```java
-// sales/application/domain/model/Order.java
-package com.example.shop.sales.application.domain.model;
+// sales/domain/Order.java
+package com.example.shop.sales.domain;
 
 import com.example.shop.sales.common.Preconditions;
 import java.time.Instant;
@@ -395,8 +396,8 @@ public final class Order {
 ```
 
 ```java
-// sales/application/domain/model/OrderId.java
-package com.example.shop.sales.application.domain.model;
+// sales/domain/OrderId.java
+package com.example.shop.sales.domain;
 
 import com.example.shop.sales.common.Preconditions;
 import java.util.UUID;
@@ -413,13 +414,37 @@ public record OrderId(UUID value) {
 }
 ```
 
+## Domain service (optional, `sales/domain/service`): *not in the examples*
+
+Only when a domain operation does not belong to a single entity or value object, typically when it needs several
+aggregates. Plain Java, stateless, named after the operation, no transaction, security or port: the application
+service loads the aggregates through its ports, calls the domain service and saves the result. `Customer` below
+stands for a second aggregate of the context.
+
+```java
+// sales/domain/service/LoyaltyDiscount.java
+package com.example.shop.sales.domain.service;
+
+import com.example.shop.sales.domain.Customer;
+import com.example.shop.sales.domain.Order;
+
+/** Discount rule that needs two aggregates, so it belongs to neither. */
+public final class LoyaltyDiscount {
+
+    /** @return the discount in percent: 5 for a customer with at least 10 previous orders, else 0 */
+    public int percentFor(Order order, Customer customer) {
+        return customer.previousOrderCount() >= 10 && !order.getLines().isEmpty() ? 5 : 0;
+    }
+}
+```
+
 ## Incoming port and command (`sales/application/port/in`)
 
 ```java
 // sales/application/port/in/OrderPlacement.java
 package com.example.shop.sales.application.port.in;
 
-import com.example.shop.sales.application.domain.model.OrderId;
+import com.example.shop.sales.domain.OrderId;
 
 public interface OrderPlacement {
 
@@ -460,7 +485,7 @@ public record PlaceOrderCommand(List<Line> lines) {
 // sales/application/port/out/OrderStore.java
 package com.example.shop.sales.application.port.out;
 
-import com.example.shop.sales.application.domain.model.Order;
+import com.example.shop.sales.domain.Order;
 
 public interface OrderStore {
 
@@ -472,7 +497,7 @@ public interface OrderStore {
 // sales/application/port/out/ShipmentRequester.java
 package com.example.shop.sales.application.port.out;
 
-import com.example.shop.sales.application.domain.model.Order;
+import com.example.shop.sales.domain.Order;
 
 /** Third-party service: asks the shipping company to deliver an order. */
 public interface ShipmentRequester {
@@ -498,14 +523,14 @@ public interface TransactionRunner {
 }
 ```
 
-## Service (`sales/application/domain/service`)
+## Application service (`sales/application/service`)
 
 ```java
-// sales/application/domain/service/PlaceOrderService.java
-package com.example.shop.sales.application.domain.service;
+// sales/application/service/PlaceOrderService.java
+package com.example.shop.sales.application.service;
 
-import com.example.shop.sales.application.domain.model.Order;
-import com.example.shop.sales.application.domain.model.OrderId;
+import com.example.shop.sales.domain.Order;
+import com.example.shop.sales.domain.OrderId;
 import com.example.shop.sales.application.port.in.OrderPlacement;
 import com.example.shop.sales.application.port.in.PlaceOrderCommand;
 import com.example.shop.sales.application.port.out.OrderStore;
@@ -514,8 +539,9 @@ import com.example.shop.sales.application.port.out.TransactionRunner;
 import java.time.Clock;
 import lombok.RequiredArgsConstructor;
 
-// Plain Java: no Helidon type, no annotation. It is created by the hexagon's configuration class and owns
-// the transaction boundary through the TransactionRunner port.
+// Application service: plain Java, no Helidon type, no annotation. It is created by the hexagon's configuration
+// class, runs the use case and owns its cross-cutting concerns:
+// the transaction boundary, through the TransactionRunner port.
 @RequiredArgsConstructor
 public class PlaceOrderService implements OrderPlacement {
 
@@ -683,7 +709,7 @@ class DbClientTransactionRunner implements TransactionRunner {
 // sales/adapter/out/persistence/OrderPersistenceAdapter.java
 package com.example.shop.sales.adapter.out.persistence;
 
-import com.example.shop.sales.application.domain.model.Order;
+import com.example.shop.sales.domain.Order;
 import com.example.shop.sales.application.port.out.OrderStore;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -766,7 +792,7 @@ Helidon `WebClient`, configured from the `shipping` config node. It does not thr
 // sales/adapter/out/shipping/ShippingRestAdapter.java
 package com.example.shop.sales.adapter.out.shipping;
 
-import com.example.shop.sales.application.domain.model.Order;
+import com.example.shop.sales.domain.Order;
 import com.example.shop.sales.application.port.out.ShipmentRequester;
 import io.helidon.http.Status;
 import io.helidon.webclient.api.WebClient;
@@ -830,7 +856,7 @@ package com.example.shop.sales.configuration;
 import com.example.shop.sales.adapter.in.web.SalesWebAdapterConfiguration;
 import com.example.shop.sales.adapter.out.persistence.SalesPersistenceAdapterConfiguration;
 import com.example.shop.sales.adapter.out.shipping.SalesShippingRestAdapterConfiguration;
-import com.example.shop.sales.application.domain.service.PlaceOrderService;
+import com.example.shop.sales.application.service.PlaceOrderService;
 import io.helidon.config.Config;
 import io.helidon.webserver.http.HttpRules;
 import java.time.Clock;
@@ -918,7 +944,7 @@ the slice above.
 // sales/order/application/port/out/InvoiceIssuer.java
 package com.example.shop.sales.order.application.port.out;
 
-import com.example.shop.sales.order.application.domain.model.Order;
+import com.example.shop.sales.order.domain.Order;
 
 public interface InvoiceIssuer {
 
@@ -932,7 +958,7 @@ package com.example.shop.sales.order.adapter.out.billing;
 
 import com.example.shop.sales.billing.application.port.in.CreateInvoiceCommand;
 import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
-import com.example.shop.sales.order.application.domain.model.Order;
+import com.example.shop.sales.order.domain.Order;
 import com.example.shop.sales.order.application.port.out.InvoiceIssuer;
 import lombok.RequiredArgsConstructor;
 
@@ -1064,10 +1090,10 @@ class DbClientTransactionRunner implements TransactionRunner {
 ```
 
 ```java
-// sales/billing/application/domain/service/CreateInvoiceService.java
-package com.example.shop.sales.billing.application.domain.service;
+// sales/billing/application/service/CreateInvoiceService.java
+package com.example.shop.sales.billing.application.service;
 
-import com.example.shop.sales.billing.application.domain.model.Invoice;
+import com.example.shop.sales.billing.domain.Invoice;
 import com.example.shop.sales.billing.application.port.in.CreateInvoiceCommand;
 import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
 import com.example.shop.sales.billing.application.port.out.InvoiceStore;
@@ -1157,7 +1183,7 @@ public final class BillingPersistenceAdapterConfiguration {
 // sales/billing/adapter/out/persistence/InvoicePersistenceAdapter.java
 package com.example.shop.sales.billing.adapter.out.persistence;
 
-import com.example.shop.sales.billing.application.domain.model.Invoice;
+import com.example.shop.sales.billing.domain.Invoice;
 import com.example.shop.sales.billing.application.port.out.InvoiceFinder;
 import com.example.shop.sales.billing.application.port.out.InvoiceStore;
 import com.example.shop.sales.common.persistence.DbTransactions;
@@ -1223,8 +1249,8 @@ package com.example.shop.sales.billing.configuration;
 
 import com.example.shop.sales.billing.adapter.in.web.BillingWebAdapterConfiguration;
 import com.example.shop.sales.billing.adapter.out.persistence.BillingPersistenceAdapterConfiguration;
-import com.example.shop.sales.billing.application.domain.service.CreateInvoiceService;
-import com.example.shop.sales.billing.application.domain.service.FindInvoiceByOrderService;
+import com.example.shop.sales.billing.application.service.CreateInvoiceService;
+import com.example.shop.sales.billing.application.service.FindInvoiceByOrderService;
 import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
 import com.example.shop.sales.billing.application.port.in.InvoiceLookup;
 import com.example.shop.sales.common.persistence.DbTransactions;
@@ -1263,7 +1289,7 @@ import com.example.shop.sales.common.persistence.DbTransactions;
 import com.example.shop.sales.order.adapter.in.web.OrderWebAdapterConfiguration;
 import com.example.shop.sales.order.adapter.out.billing.OrderBillingDomainAdapterConfiguration;
 import com.example.shop.sales.order.adapter.out.persistence.OrderPersistenceAdapterConfiguration;
-import com.example.shop.sales.order.application.domain.service.PlaceOrderService;
+import com.example.shop.sales.order.application.service.PlaceOrderService;
 import com.example.shop.sales.order.application.port.in.OrderPlacement;
 import io.helidon.config.Config;
 import io.helidon.webserver.http.HttpRules;
@@ -1410,36 +1436,36 @@ class ArchitectureTest {
             "org.eclipse.persistence..", "org.mybatis..",
             "com.fasterxml.jackson..", "tools.jackson..", "jakarta.json..", "com.google.gson..", "org.json.."};
 
-    // Lombok (lombok..) and JSpecify (org.jspecify..) are deliberately not forbidden anywhere in the application.
+    // Lombok (lombok..) and JSpecify (org.jspecify..) are deliberately not forbidden in domain and application.
     @ArchTest
-    static final ArchRule domainHasNoOrmOrJson = noClasses()
-            .that().resideInAPackage("..application..")
+    static final ArchRule domainAndApplicationHaveNoOrmOrJson = noClasses()
+            .that().resideInAnyPackage("..domain..", "..application..")
             .should().dependOnClassesThat().resideInAnyPackage(ORM_AND_JSON);
 
-    // Helidon SE has no @Transactional to tolerate: the whole application (domain and ports) is free of
-    // Helidon and of any container API. Transactions go through an outgoing port.
+    // Domain and application are free of Helidon and of any container API. The application services own the
+    // transaction boundary, through an outgoing port (TransactionRunner).
     @ArchTest
-    static final ArchRule applicationIsFrameworkFree = noClasses()
-            .that().resideInAPackage("..application..")
+    static final ArchRule domainAndApplicationAreFrameworkFree = noClasses()
+            .that().resideInAnyPackage("..domain..", "..application..")
             .should().dependOnClassesThat().resideInAnyPackage(
                     "io.helidon..", "jakarta.inject..", "jakarta.enterprise..", "jakarta.ws.rs..",
                     "org.springframework..");
 
     @ArchTest
-    static final ArchRule modelIsSelfContained = noClasses()
-            .that().resideInAPackage("..application.domain.model..")
-            .should().dependOnClassesThat().resideInAnyPackage(
-                    "..application.domain.service..", "..application.port..", "..adapter..");
+    static final ArchRule domainIsSelfContained = noClasses()
+            .that().resideInAPackage("..domain..")
+            .should().dependOnClassesThat().resideInAnyPackage("..application..", "..adapter..");
 
     @ArchTest
     static final ArchRule servicesDoNotUseAdapters = noClasses()
-            .that().resideInAPackage("..application.domain.service..")
+            .that().resideInAPackage("..application.service..")
             .should().dependOnClassesThat().resideInAPackage("..adapter..");
 
     @ArchTest
     static final ArchRule commonIsIndependent = noClasses()
             .that().resideInAPackage("..common..")
-            .should().dependOnClassesThat().resideInAnyPackage("..application..", "..adapter..", "..configuration..");
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "..domain..", "..application..", "..adapter..", "..configuration..");
 
     @ArchTest
     static final ArchRule applicationDoesNotDependOnAdapters = noClasses()
@@ -1533,13 +1559,13 @@ class ArchitectureRulesDetectViolationsTest {
     }
 
     @Test
-    void should_detect_a_violation_when_the_model_uses_helidon() {
-        assertViolation(ArchitectureTest.applicationIsFrameworkFree, VIOLATIONS);
+    void should_detect_a_violation_when_the_domain_uses_helidon() {
+        assertViolation(ArchitectureTest.domainAndApplicationAreFrameworkFree, VIOLATIONS);
     }
 
     @Test
     void should_detect_a_violation_when_the_domain_uses_json() {
-        assertViolation(ArchitectureTest.domainHasNoOrmOrJson, VIOLATIONS);
+        assertViolation(ArchitectureTest.domainAndApplicationHaveNoOrmOrJson, VIOLATIONS);
     }
 
     @Test
@@ -1750,15 +1776,15 @@ Domain and command tests are plain JUnit + AssertJ. A service test mocks the out
 the work without a transaction:
 
 ```java
-// src/test/java/com/example/shop/sales/application/domain/service/PlaceOrderServiceTest.java
-package com.example.shop.sales.application.domain.service;
+// src/test/java/com/example/shop/sales/application/service/PlaceOrderServiceTest.java
+package com.example.shop.sales.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.mock;
 import static org.mockito.BDDMockito.then;
 
-import com.example.shop.sales.application.domain.model.Order;
+import com.example.shop.sales.domain.Order;
 import com.example.shop.sales.application.port.in.PlaceOrderCommand;
 import com.example.shop.sales.application.port.out.OrderStore;
 import com.example.shop.sales.application.port.out.ShipmentRequester;

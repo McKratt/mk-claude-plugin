@@ -5,7 +5,7 @@ import com.example.shop.sales.common.persistence.DbTransactions;
 import com.example.shop.sales.order.adapter.in.web.OrderWebAdapterConfiguration;
 import com.example.shop.sales.order.adapter.out.billing.OrderBillingDomainAdapterConfiguration;
 import com.example.shop.sales.order.adapter.out.persistence.OrderPersistenceAdapterConfiguration;
-import com.example.shop.sales.order.application.domain.service.PlaceOrderService;
+import com.example.shop.sales.order.application.service.PlaceOrderService;
 import com.example.shop.sales.order.application.port.in.OrderPlacement;
 import io.helidon.config.Config;
 import io.helidon.webserver.http.HttpRules;

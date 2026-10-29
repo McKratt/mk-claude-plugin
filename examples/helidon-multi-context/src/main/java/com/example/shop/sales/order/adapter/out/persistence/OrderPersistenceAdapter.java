@@ -1,7 +1,7 @@
 package com.example.shop.sales.order.adapter.out.persistence;
 
 import com.example.shop.sales.common.persistence.DbTransactions;
-import com.example.shop.sales.order.application.domain.model.Order;
+import com.example.shop.sales.order.domain.Order;
 import com.example.shop.sales.order.application.port.out.OrderStore;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
