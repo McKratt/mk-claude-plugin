@@ -51,29 +51,35 @@ You never modify files.
    controllers on `HttpRules`); every other top-level class of an adapter package is package-private.
    Domain objects are not serialized as JSON payloads or bound directly to SQL results unless the shortcut is documented.
 7. **Mapping.** Each boundary has an explicit mapping strategy. Undocumented shortcuts are findings.
-8. **Bounded contexts of the same component.** Each `<component>/<context>/` is its own hexagon. A context reaches
-   another context of the same component only through an outgoing port of its own, implemented by a
+8. **Bounded contexts of the application.** Each `<base>/<context>/` is its own hexagon. A context reaches
+   another context only through an outgoing port of its own, implemented by a
    `*DomainAdapter` in `adapter/out/<target-context>/` that uses the target's incoming port (the use case interface and its command)
    and nothing else of the target (no domain, services, outgoing ports or adapters). Anything else is a violation.
-   The source context's `configuration` package may import the target's incoming port to wire the `*DomainAdapter`;
+   The source context's file in `configuration` may import the target's incoming port to wire the `*DomainAdapter`;
    that is not a finding. A cross-context call must run in the caller's transaction: each context's
-   `TransactionRunner` adapter delegating to the component's shared `common/persistence/DbTransactions` is the expected
+   `TransactionRunner` adapter delegating to the application's shared `common/persistence/DbTransactions` is the expected
    design; separate transaction holders per context (a callee committing on its own) are a finding.
    Each context owns its database schema; a foreign key or SQL referencing another context's schema is a finding.
-   A component with a single bounded context omits the context level in its package names; that is not a finding.
-9. **Different components.** Components share no classes. A component reaches another only through the target's
-   public API (for example REST, or messaging), via an outgoing port and an adapter in `adapter/out/<target-component>/`.
-   Any import of another component's classes is a violation, unless the user documented an in-process API.
+   **Structure.** The base package is the application: one `common` package and one `configuration` package directly
+   under it, and either the hexagon itself (a single bounded context: `domain`, `application`, `adapter` directly in
+   the base package) or one package per bounded context directly under the base package. An intermediate grouping
+   package (a "component" level such as `<base>/sales/order`), a `common` or `configuration` package inside a context,
+   or a single context nested in its own package are findings.
+9. **Other applications.** Another application (another service, a third party) is reached only through its public
+   API (for example REST, or messaging), via an outgoing port and an adapter in `adapter/out/<target>/`. Any compile-time
+   dependency on another application's classes is a violation, unless the user documented an in-process API.
    Outgoing HTTP must use Helidon's `WebClient` (`io.helidon.webclient..`) built from `Config`: `java.net.http`,
    `java.net.HttpURLConnection`, Apache HttpClient or OkHttp in application code is a violation. An adapter that ignores
    the response status (Helidon's `WebClient` does not throw on 4xx/5xx) is a finding.
-10. **Common.** `<component>/common` holds utilities usable anywhere in the component. It must not depend on `application`, `adapter`
-    or any `configuration` package, and it is not shared with other components. The one accepted technical class is
-    `common/persistence/DbTransactions` (shared DbClient and transaction of a component with several contexts): its use
+10. **Common.** `<base>/common` holds utilities usable anywhere in the application. It must not depend on `domain`,
+    `application`, `adapter` or `configuration`, and it is not shared with other applications. The one accepted
+    technical class is `common/persistence/DbTransactions` (shared DbClient and transaction of an application with
+    several contexts): its use
     outside persistence adapters and configuration classes, in particular from `application`, is a violation.
-11. **Configuration and wiring.** There is no container: `<hexagon>/configuration/<Hexagon>Configuration` creates the
-    adapters (through the `*AdapterConfiguration` classes) and the services, and registers the web adapters;
-    `<base>/configuration` holds the application-wide assembly called by `main`. Only configuration classes and the main
+11. **Configuration and wiring.** There is no container. The single `<base>/configuration` package holds one file per
+    bounded context, `<Context>Configuration`, which creates the context's adapters (through the `*AdapterConfiguration`
+    classes) and application services and registers its web adapters, plus `<App>Configuration`, the application-wide
+    assembly called by `main` and by the `*IT` tests. Only configuration classes and the main
     class may depend on a `configuration` package or a `*AdapterConfiguration`. Helidon `Config` is created once in
     `main` (`Config.create()`, `application.yaml`) and passed down as nodes; reading it with `Services.get(Config.class)`
     or `Config.global()` outside the composition root is a finding.

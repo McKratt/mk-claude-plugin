@@ -16,7 +16,7 @@
   <artifactId>shop-helidon-multi-context</artifactId>
   <version>0.0.1-SNAPSHOT</version>
   <name>shop-helidon-multi-context</name>
-  <description>Example: Helidon SE, one component with two bounded contexts (order, billing) joined by a DomainAdapter</description>
+  <description>Example: Helidon SE, two bounded contexts (order, billing) directly under the base package, joined by a DomainAdapter</description>
 
   <properties>
     <mainClass>com.example.shop.ShopApplication</mainClass>

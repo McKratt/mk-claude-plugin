@@ -78,7 +78,7 @@ class ArchitectureRulesDetectViolationsTest {
     }
 
     private static final JavaClasses CONTEXT_VIOLATIONS = new ClassFileImporter().importPackages(
-            "com.example.shop.sales.order.fixture", "com.example.shop.sales.billing.fixture");
+            "com.example.shop.order.fixture", "com.example.shop.billing.fixture");
 
     @Test
     void should_detect_a_violation_when_order_uses_billing_outside_its_domain_adapter() {

@@ -1,11 +1,12 @@
 # Templates: one vertical slice
 
-Example slice: place an order. Base package `com.example.shop`, component `sales`, bounded context `order`.
+Example slice: place an order. Base package `com.example.shop`, bounded context `order`.
 Replace names to fit the user's domain. All code targets Java 25 and Spring Boot.
-The slice below lives in a component with several bounded contexts (`sales/order`, `sales/billing`).
-For a component with a single context, omit the context level: `com.example.shop.sales.domain`,
-`com.example.shop.sales.adapter.in.web`, and so on. Utilities usable anywhere in the component go in
-`com.example.shop.sales.common`.
+The slice below lives in an application with several bounded contexts (`order`, `billing`), each directly under the
+base package. With a single context, the hexagon sits directly in the base package: `com.example.shop.domain`,
+`com.example.shop.adapter.in.web`, and so on. In both cases there is one `com.example.shop.common` (utilities usable
+anywhere in the application) and one `com.example.shop.configuration` (one file per bounded context, plus the
+general configuration).
 
 ## Null-safety (JSpecify)
 
@@ -14,17 +15,17 @@ Add `org.jspecify:jspecify` (version managed by the Spring Boot BOM). Mark the d
 `@NullMarked`, so every type is non-null unless annotated `@Nullable`:
 
 ```java
-// sales/order/domain/package-info.java
+// order/domain/package-info.java
 @NullMarked
-package com.example.shop.sales.order.domain;
+package com.example.shop.order.domain;
 
 import org.jspecify.annotations.NullMarked;
 ```
 
-## Domain (`sales/order/domain`)
+## Domain (`order/domain`)
 
 ```java
-package com.example.shop.sales.order.domain;
+package com.example.shop.order.domain;
 
 import java.util.UUID;
 
@@ -40,7 +41,7 @@ public record OrderId(UUID value) {
 ```
 
 ```java
-package com.example.shop.sales.order.domain;
+package com.example.shop.order.domain;
 
 import java.util.List;
 import java.util.Objects;
@@ -76,7 +77,7 @@ public final class Order {
 }
 ```
 
-## Domain service (optional, `sales/order/domain/service`): *not in the examples*
+## Domain service (optional, `order/domain/service`): *not in the examples*
 
 Only when a domain operation does not belong to a single entity or value object, typically when it needs several
 aggregates. Plain Java, stateless, named after the operation, no transaction, security or port: the application
@@ -84,11 +85,11 @@ service loads the aggregates through its ports, calls the domain service and sav
 stands for a second aggregate of the context.
 
 ```java
-// sales/order/domain/service/LoyaltyDiscount.java
-package com.example.shop.sales.order.domain.service;
+// order/domain/service/LoyaltyDiscount.java
+package com.example.shop.order.domain.service;
 
-import com.example.shop.sales.order.domain.Customer;
-import com.example.shop.sales.order.domain.Order;
+import com.example.shop.order.domain.Customer;
+import com.example.shop.order.domain.Order;
 
 /** Discount rule that needs two aggregates, so it belongs to neither. */
 public final class LoyaltyDiscount {
@@ -100,12 +101,12 @@ public final class LoyaltyDiscount {
 }
 ```
 
-## Incoming port and command (`sales/order/application/port/in`)
+## Incoming port and command (`order/application/port/in`)
 
 ```java
-package com.example.shop.sales.order.application.port.in;
+package com.example.shop.order.application.port.in;
 
-import com.example.shop.sales.order.domain.OrderId;
+import com.example.shop.order.domain.OrderId;
 
 public interface OrderPlacement {
     OrderId placeOrder(PlaceOrderCommand command);
@@ -113,7 +114,7 @@ public interface OrderPlacement {
 ```
 
 ```java
-package com.example.shop.sales.order.application.port.in;
+package com.example.shop.order.application.port.in;
 
 import java.util.List;
 import java.util.Objects;
@@ -140,28 +141,28 @@ public record PlaceOrderCommand(List<Line> lines) {
 }
 ```
 
-## Outgoing port (`sales/order/application/port/out`)
+## Outgoing port (`order/application/port/out`)
 
 ```java
-package com.example.shop.sales.order.application.port.out;
+package com.example.shop.order.application.port.out;
 
-import com.example.shop.sales.order.domain.Order;
+import com.example.shop.order.domain.Order;
 
 public interface OrderStore {
     void save(Order order);
 }
 ```
 
-## Application service (`sales/order/application/service`)
+## Application service (`order/application/service`)
 
 ```java
-package com.example.shop.sales.order.application.service;
+package com.example.shop.order.application.service;
 
-import com.example.shop.sales.order.application.port.in.PlaceOrderCommand;
-import com.example.shop.sales.order.application.port.in.OrderPlacement;
-import com.example.shop.sales.order.application.port.out.OrderStore;
-import com.example.shop.sales.order.domain.Order;
-import com.example.shop.sales.order.domain.OrderId;
+import com.example.shop.order.application.port.in.PlaceOrderCommand;
+import com.example.shop.order.application.port.in.OrderPlacement;
+import com.example.shop.order.application.port.out.OrderStore;
+import com.example.shop.order.domain.Order;
+import com.example.shop.order.domain.OrderId;
 import org.springframework.transaction.annotation.Transactional;
 
 // Application service: runs the use case and owns its cross-cutting concerns (here the transaction).
@@ -188,16 +189,17 @@ public class PlaceOrderService implements OrderPlacement {
 }
 ```
 
-## Wiring of the hexagon (`sales/order/configuration`)
+## Wiring of the bounded context (`configuration/OrderConfiguration`)
 
-Services carry no stereotype annotation, so each one is declared with a `@Bean` method.
+Application services carry no stereotype annotation, so each one is declared with a `@Bean` method, in the file of
+its bounded context in the single `configuration` package.
 
 ```java
-package com.example.shop.sales.order.configuration;
+package com.example.shop.configuration;
 
-import com.example.shop.sales.order.application.service.PlaceOrderService;
-import com.example.shop.sales.order.application.port.in.OrderPlacement;
-import com.example.shop.sales.order.application.port.out.OrderStore;
+import com.example.shop.order.application.service.PlaceOrderService;
+import com.example.shop.order.application.port.in.OrderPlacement;
+import com.example.shop.order.application.port.out.OrderStore;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -211,13 +213,13 @@ class OrderConfiguration {
 }
 ```
 
-## Web adapter (`sales/order/adapter/in/web`)
+## Web adapter (`order/adapter/in/web`)
 
 ```java
-package com.example.shop.sales.order.adapter.in.web;
+package com.example.shop.order.adapter.in.web;
 
-import com.example.shop.sales.order.application.port.in.PlaceOrderCommand;
-import com.example.shop.sales.order.application.port.in.OrderPlacement;
+import com.example.shop.order.application.port.in.PlaceOrderCommand;
+import com.example.shop.order.application.port.in.OrderPlacement;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -261,10 +263,10 @@ class PlaceOrderController {
 
 Keep error mapping as `@ExceptionHandler` methods in the controller: `@RestControllerAdvice` would be a second stereotype.
 
-## Persistence adapter (`sales/order/adapter/out/persistence`)
+## Persistence adapter (`order/adapter/out/persistence`)
 
 ```java
-package com.example.shop.sales.order.adapter.out.persistence;
+package com.example.shop.order.adapter.out.persistence;
 
 import jakarta.persistence.*;
 import java.util.List;
@@ -291,7 +293,7 @@ class OrderJpaEntity {
 ```
 
 ```java
-package com.example.shop.sales.order.adapter.out.persistence;
+package com.example.shop.order.adapter.out.persistence;
 
 import jakarta.persistence.Embeddable;
 
@@ -310,7 +312,7 @@ class OrderLineEmbeddable {
 ```
 
 ```java
-package com.example.shop.sales.order.adapter.out.persistence;
+package com.example.shop.order.adapter.out.persistence;
 
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -319,10 +321,10 @@ interface SpringDataOrderRepository extends JpaRepository<OrderJpaEntity, UUID> 
 ```
 
 ```java
-package com.example.shop.sales.order.adapter.out.persistence;
+package com.example.shop.order.adapter.out.persistence;
 
-import com.example.shop.sales.order.application.port.out.OrderStore;
-import com.example.shop.sales.order.domain.Order;
+import com.example.shop.order.application.port.out.OrderStore;
+import com.example.shop.order.domain.Order;
 class OrderPersistenceAdapter implements OrderStore {
 
     private final SpringDataOrderRepository repository;
@@ -346,9 +348,9 @@ class OrderPersistenceAdapter implements OrderStore {
 ```
 
 ```java
-package com.example.shop.sales.order.adapter.out.persistence;
+package com.example.shop.order.adapter.out.persistence;
 
-import com.example.shop.sales.order.application.port.out.OrderStore;
+import com.example.shop.order.application.port.out.OrderStore;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -367,16 +369,16 @@ JPA entities and Spring Data repositories are not stereotype beans: Spring Boot 
 
 Move mapping into a dedicated `OrderMapper` class once it grows (add `toDomain` for load ports).
 
-## Joining two bounded contexts of the same component (`DomainAdapter`)
+## Joining two bounded contexts of the application (`DomainAdapter`)
 
-Both `order` and `billing` belong to the component `sales`. After an order is placed, `order` asks `billing`
+`order` and `billing` are two bounded contexts of the application. After an order is placed, `order` asks `billing`
 to create an invoice. `order` never imports anything from `billing` except its incoming port and command,
 and only inside its `DomainAdapter`.
 
-Target context `billing`: incoming port and command (`sales/billing/application/port/in`).
+Target context `billing`: incoming port and command (`billing/application/port/in`).
 
 ```java
-package com.example.shop.sales.billing.application.port.in;
+package com.example.shop.billing.application.port.in;
 
 public interface InvoiceCreation {
     void createInvoice(CreateInvoiceCommand command);
@@ -384,7 +386,7 @@ public interface InvoiceCreation {
 ```
 
 ```java
-package com.example.shop.sales.billing.application.port.in;
+package com.example.shop.billing.application.port.in;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -399,28 +401,28 @@ public record CreateInvoiceCommand(UUID orderId, int itemCount) {
 }
 ```
 
-Source context `order`: outgoing port, written in `order`'s own language (`sales/order/application/port/out`).
+Source context `order`: outgoing port, written in `order`'s own language (`order/application/port/out`).
 
 ```java
-package com.example.shop.sales.order.application.port.out;
+package com.example.shop.order.application.port.out;
 
-import com.example.shop.sales.order.domain.Order;
+import com.example.shop.order.domain.Order;
 
 public interface InvoiceIssuer {
     void createInvoiceFor(Order order);
 }
 ```
 
-Source context `order`: the `DomainAdapter` (`sales/order/adapter/out/billing`). It implements the port, calls the target's
+Source context `order`: the `DomainAdapter` (`order/adapter/out/billing`). It implements the port, calls the target's
 incoming port directly and converts `order` types into the target's command.
 
 ```java
-package com.example.shop.sales.order.adapter.out.billing;
+package com.example.shop.order.adapter.out.billing;
 
-import com.example.shop.sales.billing.application.port.in.CreateInvoiceCommand;
-import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
-import com.example.shop.sales.order.domain.Order;
-import com.example.shop.sales.order.application.port.out.InvoiceIssuer;
+import com.example.shop.billing.application.port.in.CreateInvoiceCommand;
+import com.example.shop.billing.application.port.in.InvoiceCreation;
+import com.example.shop.order.domain.Order;
+import com.example.shop.order.application.port.out.InvoiceIssuer;
 
 class BillingDomainAdapter implements InvoiceIssuer {
 
@@ -439,10 +441,10 @@ class BillingDomainAdapter implements InvoiceIssuer {
 ```
 
 ```java
-package com.example.shop.sales.order.adapter.out.billing;
+package com.example.shop.order.adapter.out.billing;
 
-import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
-import com.example.shop.sales.order.application.port.out.InvoiceIssuer;
+import com.example.shop.billing.application.port.in.InvoiceCreation;
+import com.example.shop.order.application.port.out.InvoiceIssuer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -459,15 +461,15 @@ class OrderBillingDomainAdapterConfiguration {
 `PlaceOrderService` then takes an `InvoiceIssuer` in its constructor and calls
 `invoiceIssuer.createInvoiceFor(order)` after saving. It never sees `billing`.
 
-## Calling another component through its public API (REST example)
+## Calling another application through its public API (REST example)
 
-`shipping` is a different component. `sales/order` never imports its classes. It only knows `shipping`'s public API,
+`shipping` is another application (a third party here). `order` never imports its classes. It only knows `shipping`'s public API,
 here REST, and reaches it through an outgoing port and an adapter. The API could be something else (messaging, gRPC).
 
 ```java
-package com.example.shop.sales.order.application.port.out;
+package com.example.shop.order.application.port.out;
 
-import com.example.shop.sales.order.domain.Order;
+import com.example.shop.order.domain.Order;
 
 public interface ShipmentRequester {
     void requestShipmentFor(Order order);
@@ -475,10 +477,10 @@ public interface ShipmentRequester {
 ```
 
 ```java
-package com.example.shop.sales.order.adapter.out.shipping;
+package com.example.shop.order.adapter.out.shipping;
 
-import com.example.shop.sales.order.domain.Order;
-import com.example.shop.sales.order.application.port.out.ShipmentRequester;
+import com.example.shop.order.domain.Order;
+import com.example.shop.order.application.port.out.ShipmentRequester;
 import java.util.UUID;
 import org.springframework.web.client.RestClient;
 
@@ -506,9 +508,9 @@ class ShippingRestAdapter implements ShipmentRequester {
 ```
 
 ```java
-package com.example.shop.sales.order.adapter.out.shipping;
+package com.example.shop.order.adapter.out.shipping;
 
-import com.example.shop.sales.order.application.port.out.ShipmentRequester;
+import com.example.shop.order.application.port.out.ShipmentRequester;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -535,7 +537,7 @@ shipping:
   base-url: https://shipping.example.com
 ```
 
-The path, payload and base URL above are placeholders: use the real contract published by the target component.
+The path, payload and base URL above are placeholders: use the real contract published by the target application.
 Keep the `RestClient` details, error mapping and retries inside this adapter.
 
 As with `InvoiceIssuer`, `PlaceOrderService` takes a `ShipmentRequester` in its constructor and calls
@@ -680,22 +682,16 @@ class ArchitectureTest {
     // One pair of rules per source -> target bounded context, for example order -> billing.
     @ArchTest
     static final ArchRule orderReachesBillingOnlyThroughItsDomainAdapter = noClasses()
-            .that().resideInAPackage("com.example.shop.sales.order..")
-            .and().resideOutsideOfPackage("com.example.shop.sales.order.adapter.out.billing..")
-            .should().dependOnClassesThat().resideInAPackage("com.example.shop.sales.billing..");
+            .that().resideInAPackage("com.example.shop.order..")
+            .and().resideOutsideOfPackage("com.example.shop.order.adapter.out.billing..")
+            .should().dependOnClassesThat().resideInAPackage("com.example.shop.billing..");
 
     @ArchTest
     static final ArchRule orderDomainAdapterUsesOnlyBillingIncomingPorts = classes()
-            .that().resideInAPackage("com.example.shop.sales.order.adapter.out.billing..")
+            .that().resideInAPackage("com.example.shop.order.adapter.out.billing..")
             .should().onlyDependOnClassesThat(
-                    not(resideInAPackage("com.example.shop.sales.billing.."))
-                            .or(resideInAPackage("com.example.shop.sales.billing.application.port.in..")));
-
-    // Different components share no classes: they only talk through the target's public API (REST here).
-    @ArchTest
-    static final ArchRule salesDoesNotUseShippingClasses = noClasses()
-            .that().resideInAPackage("com.example.shop.sales..")
-            .should().dependOnClassesThat().resideInAPackage("com.example.shop.shipping..");
+                    not(resideInAPackage("com.example.shop.billing.."))
+                            .or(resideInAPackage("com.example.shop.billing.application.port.in..")));
 }
 ```
 
@@ -718,7 +714,8 @@ class ClockConfiguration {
 }
 ```
 
-Place other general `@Configuration` classes here (web, security, serialization). Component-specific wiring stays inside its component.
+Place other general `@Configuration` classes here (web, security, serialization), next to the one file per bounded
+context (`OrderConfiguration`, `BillingConfiguration`).
 
 ## Use case integration test (`*IT`)
 
@@ -825,14 +822,14 @@ Unit tests follow the `java-testing` skill: AssertJ assertions and BDD Mockito n
 Service test with a mocked outgoing port:
 
 ```java
-package com.example.shop.sales.order.application.service;
+package com.example.shop.order.application.service;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.then;
 
-import com.example.shop.sales.order.domain.Order;
-import com.example.shop.sales.order.application.port.in.PlaceOrderCommand;
-import com.example.shop.sales.order.application.port.out.OrderStore;
+import com.example.shop.order.domain.Order;
+import com.example.shop.order.application.port.in.PlaceOrderCommand;
+import com.example.shop.order.application.port.out.OrderStore;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -861,7 +858,7 @@ class PlaceOrderServiceTest {
 Command validation test:
 
 ```java
-package com.example.shop.sales.order.application.port.in;
+package com.example.shop.order.application.port.in;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 

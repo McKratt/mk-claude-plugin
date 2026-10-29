@@ -21,24 +21,30 @@ Ready-to-adapt code lives in [references/templates.md](references/templates.md).
 Ask only for what is missing, in one short message:
 
 - Group ID, artifact ID and **base package** (for example `com.example.shop`)
-- **Component** name (for example `sales`) and its first **bounded context** name (for example `order`)
+- The **bounded contexts** of the application: a single one (default) or their names (for example `order`, `billing`)
 - Persistence: Spring Data JPA (default), none, or other
 - Single module (default) or multi-module (see section 6)
 
 ## 2. Package structure
 
-One top-level package per component. A component holds one or more **bounded contexts**, and each bounded context
-is its own hexagon. When the component has **several** contexts, each gets its own package; when it has **a single**
-context, the context level is omitted from the package name. A `common` package holds utilities usable anywhere
-in the component:
+The base package is the application. It holds the `@SpringBootApplication` class, **one** `common` package,
+**one** `configuration` package, and the hexagon(s):
+
+- **a single bounded context**: the hexagon sits directly in the base package;
+- **several bounded contexts**: one package per context, directly under the base package, each its own hexagon.
 
 ```
-<base>/<component>/
-├── common/                      # utilities usable anywhere in the component (shared by its contexts)
-└── [<context>/]                 # one hexagon per bounded context (level omitted for a single context)
+<base>/                              <base>/
+├── Application.java                 ├── Application.java
+├── common/                          ├── common/
+├── configuration/                   ├── configuration/
+├── domain/                          ├── <context-a>/        # domain/, application/, adapter/ as below
+├── application/                     └── <context-b>/
+└── adapter/
+     (one bounded context)                (several bounded contexts)
 ```
 
-Layout of a hexagon (`<hexagon>` = `<base>/<component>/[<context>/]`):
+Layout of a hexagon (`<hexagon>` = `<base>` or `<base>/<context>`):
 
 ```
 <hexagon>/
@@ -49,29 +55,23 @@ Layout of a hexagon (`<hexagon>` = `<base>/<component>/[<context>/]`):
 │   │   ├── in/                  # incoming ports (use cases) + one command per use case
 │   │   └── out/                 # outgoing ports
 │   └── service/                 # application services *Service: implement incoming ports, own transactions and security
-├── adapter/                     # outgoing adapter packages also hold their own *AdapterConfiguration (rule 7)
-│   ├── in/web/                  # controllers, web models
-│   ├── out/persistence/         # persistence adapter, JPA entities, mappers, Spring Data repositories
-│   └── out/<target-context>/    # DomainAdapter calling another bounded context of the same component (rule 8)
-└── configuration/               # @Configuration with @Bean methods wiring this hexagon's services (rule 11)
+└── adapter/                     # outgoing adapter packages also hold their own *AdapterConfiguration (rule 7)
+    ├── in/web/                  # controllers, web models
+    ├── out/persistence/         # persistence adapter, JPA entities, mappers, Spring Data repositories
+    └── out/<target-context>/    # DomainAdapter calling another bounded context of the application (rule 8)
 ```
 
-Application-wide configuration lives in a `configuration` package directly under the base package, next to the
-components and the `@SpringBootApplication` class:
-
-```
-<base>/
-├── Application.java            # @SpringBootApplication
-├── configuration/              # general Spring Java config (@Configuration classes)
-└── <component>/[<context>/]    # see above
-```
-
-- `configuration` holds general `@Configuration` classes only (for example a `Clock` bean, security, web or
-  Jackson settings).
+- `common` holds utilities usable anywhere in the application (rule 10).
+- `configuration` holds **one file per bounded context** (`<Context>Configuration`, for example `OrderConfiguration`,
+  `BillingConfiguration`; with a single context, named after its domain, for example `SalesConfiguration`) with the
+  `@Bean` methods that create its application services (rule 11), plus the general `@Configuration` classes (for
+  example a `Clock` bean, security, web or Jackson settings).
 - Configuration classes may depend on anything, since they assemble the application. **Nothing depends on
-  `configuration`**: components never import it.
-- The services of a hexagon are wired in that hexagon's own `configuration` package (rule 11), not here.
-  Both `configuration` packages are conventions of this skill, not rules of the book.
+  `configuration`**: the hexagons never import it.
+- The adapters are not created there: each adapter package holds its own `*AdapterConfiguration` (rule 7), so its
+  classes stay package-private.
+- The single `configuration` package and the per-adapter configuration classes are conventions of this skill, not
+  rules of the book.
 
 ## 3. Rules
 
@@ -111,32 +111,34 @@ components and the `@SpringBootApplication` class:
    and record any shortcut consciously, for example in an `ARCHITECTURE.md` or an ADR.
 7. **Adapters never depend on each other, carry no stereotype and are package-private.** No `@Component`, `@Service`
    or `@Repository` on an adapter. Each outgoing adapter package holds its own `@Configuration` class (named
-   `<Hexagon><Kind>AdapterConfiguration`, for example `OrderPersistenceAdapterConfiguration`) with the `@Bean`
+   `<Context><Kind>AdapterConfiguration`, for example `OrderPersistenceAdapterConfiguration`) with the `@Bean`
    methods that create its adapters, injecting the ports and use cases they need. Because the configuration class is
    in the same package, every adapter class, JPA entity and Spring Data repository can stay package-private.
    **Exception: controllers.** Since Spring Framework 6, MVC only detects handlers annotated with `@Controller` or
    `@RestController` (a type-level `@RequestMapping` is not enough), so a controller keeps `@RestController`, is
    found by component scanning and is not created in a configuration class. It is still package-private and handles
    errors with `@ExceptionHandler` methods in itself (not `@RestControllerAdvice`, which would be a second stereotype).
-8. **Joining two bounded contexts of the same component.** The source context defines an outgoing port
+8. **Joining two bounded contexts of the application.** The source context defines an outgoing port
    (`application/port/out`, in its own language and types). It is implemented by a `<Target>DomainAdapter` in
    `adapter/out/<target-context>/`, which calls the target context's **incoming port** (a use case interface) directly and
    converts the source's types to the target's command. Nothing else of the target context may be used: not its
    domain, services, outgoing ports or adapters. The source's application layer only ever sees its own port.
-9. **Joining two different components** goes through the **public API of the target component**, for example a REST
-   service, but it can be another technology (messaging, gRPC...). The source defines an outgoing port in its
-   `application/port/out`, implemented by an adapter in `adapter/out/<target-component>/` (for example
+9. **Calling another application** (another service, for example a third party) goes through its **public API**, for
+   example a REST service, but it can be another technology (messaging, gRPC...). The source defines an outgoing port in its
+   `application/port/out`, implemented by an adapter in `adapter/out/<target>/` (for example
    `<Target>RestAdapter`) that calls the target's public API and maps the response to the source's own model. Like every adapter, it is
    created by a `@Configuration` class in its package (rule 7).
    Outgoing HTTP goes through Spring's `RestClient`, built from the injected auto-configured `RestClient.Builder`, never
    through a raw HTTP client (`java.net.http`, Apache or OkHttp types in application code).
-   There is **no compile-time dependency** between the two components. If the API technology is not stated, ask the user.
-10. **`common`** holds utilities usable anywhere in the component (all its contexts and layers). It depends on
-    neither `application`, `adapter` nor any `configuration` package. It is not shared between different components (rule 9).
-11. **Wiring of a hexagon.** A `@Configuration` class in `<hexagon>/configuration/` declares one `@Bean` per service
-    (for example `orderPlacement(OrderStore store)` returning `new PlaceOrderService(store)`). Adapters are created
-    in their own adapter packages (rule 7). Nothing depends on a `@Configuration` class.
-12. **Naming**: interfaces as in rule 3, `*Service` (application services), `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`, `<Target>RestAdapter` (or the technology used), `SpringData*Repository`, `<Hexagon><Kind>AdapterConfiguration`.
+   There is **no compile-time dependency** between the two applications. If the API technology is not stated, ask the user.
+10. **`common`** (one package, directly under the base package) holds utilities usable anywhere in the application
+    (all its contexts and layers). It depends on neither `domain`, `application`, `adapter` nor `configuration`.
+    It is not shared with other applications (rule 9).
+11. **Wiring of a bounded context.** Its file in the `configuration` package, `<Context>Configuration`, declares one
+    `@Bean` per application service (for example `orderPlacement(OrderStore store)` returning
+    `new PlaceOrderService(store)`). Adapters are created in their own adapter packages (rule 7). Nothing depends on
+    a `@Configuration` class.
+12. **Naming**: interfaces as in rule 3, `*Service` (application services), `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`, `<Target>RestAdapter` (or the technology used), `SpringData*Repository`, `<Context><Kind>AdapterConfiguration`, `<Context>Configuration`.
 
 ## 4. Java 25 guidelines
 
@@ -184,7 +186,7 @@ Complement with, in this order of importance:
 
 - Outgoing adapters are created by `@Bean` methods in the `@Configuration` class of their adapter package (rule 7).
   Controllers (`@RestController`), JPA entities and Spring Data repositories are found by Spring Boot's scanning.
-- Application services carry no stereotype: wire them with `@Bean` methods in `<hexagon>/configuration/` (rule 11).
+- Application services carry no stereotype: wire them with `@Bean` methods in `configuration/<Context>Configuration` (rule 11).
   `@Transactional` (and method security) on their methods, never on the class, are the only Spring annotations in
   `application`; the domain has none.
 - **Multi-module option**: separate Maven modules (`application` including its `domain` package, `adapter-web`,
@@ -196,8 +198,8 @@ Complement with, in this order of importance:
 1. Gather inputs (section 1).
 2. Create the project: if the working directory is empty, generate the build file and `@SpringBootApplication` class by hand
    (or from Spring Initializr if reachable). If the project exists, inspect it first and do not overwrite files.
-3. Create the package tree for the first component and one **vertical slice** from `templates.md`
-   (use case, command, service, outgoing port, web adapter, persistence adapter, mappers).
+3. Create the package tree (section 2) and one **vertical slice** from `templates.md`
+   (use case, command, application service, outgoing port, web adapter, persistence adapter, mappers, configuration).
 4. Add the ArchUnit test and its dependency (latest release on Maven Central).
 5. Add the use case integration tests (`*IT`, Testcontainers, WireMock) and the domain unit tests following section 5.
 6. Run the build (`./mvnw verify`; Docker must be running for Testcontainers) and fix failures.
@@ -206,14 +208,15 @@ Complement with, in this order of importance:
 ## 8. When adding to an existing project
 
 - Add a new use case: new incoming port + command in `port/in`, application service in `application/service` (plus its
-  `@Bean` in `<hexagon>/configuration`), any new outgoing port in `port/out`, then adapter changes. Never skip the port.
+  `@Bean` in `configuration/<Context>Configuration`), any new outgoing port in `port/out`, then adapter changes. Never skip the port.
   Business rules go in `domain` (or a domain service in `domain/service` when they span several aggregates), not in
   the application service.
-- Add a new bounded context: new `<component>/<context>/` package with the same internal layout. If the component had a
-  single context until now, move its packages from `<component>/` into `<component>/<context>/`.
-- Connect two bounded contexts of the same component: follow rule 8 (outgoing port + `*DomainAdapter`).
+- Add a new bounded context: new `<base>/<context>/` package with the same internal layout and its file
+  `configuration/<Context>Configuration`. If the application had a single context until now, move its `domain`,
+  `application` and `adapter` packages from `<base>/` into `<base>/<context>/` (`common` and `configuration` stay).
+- Connect two bounded contexts of the application: follow rule 8 (outgoing port + `*DomainAdapter`).
   Never import the target context's domain, services or adapters.
-- Connect two different components: follow rule 9 (outgoing port + adapter calling the target's public API).
+- Call another application: follow rule 9 (outgoing port + adapter calling the target's public API).
 - To check conformance afterwards, delegate to the `spring-hexagonal-reviewer` agent.
 
 ## Source

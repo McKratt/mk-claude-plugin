@@ -135,23 +135,23 @@ class ArchitectureTest {
     static final ArchRule noImplSuffixOnClasses = noClasses()
             .should().haveSimpleNameEndingWith("Impl");
 
-    // Bounded contexts of the same component: order -> billing only through the DomainAdapter,
+    // Bounded contexts of the same application: order -> billing only through the DomainAdapter,
     // and only through billing's incoming ports.
     @ArchTest
     static final ArchRule orderReachesBillingOnlyThroughItsDomainAdapter = noClasses()
-            .that().resideInAPackage("com.example.shop.sales.order..")
-            .and().resideOutsideOfPackage("com.example.shop.sales.order.adapter.out.billing..")
-            .should().dependOnClassesThat().resideInAPackage("com.example.shop.sales.billing..");
+            .that().resideInAPackage("com.example.shop.order..")
+            .and().resideOutsideOfPackage("com.example.shop.order.adapter.out.billing..")
+            .should().dependOnClassesThat().resideInAPackage("com.example.shop.billing..");
 
     @ArchTest
     static final ArchRule orderDomainAdapterUsesOnlyBillingIncomingPorts = classes()
-            .that().resideInAPackage("com.example.shop.sales.order.adapter.out.billing..")
+            .that().resideInAPackage("com.example.shop.order.adapter.out.billing..")
             .should().onlyDependOnClassesThat(
-                    not(resideInAPackage("com.example.shop.sales.billing.."))
-                            .or(resideInAPackage("com.example.shop.sales.billing.application.port.in..")));
+                    not(resideInAPackage("com.example.shop.billing.."))
+                            .or(resideInAPackage("com.example.shop.billing.application.port.in..")));
 
     @ArchTest
     static final ArchRule billingDoesNotUseOrder = noClasses()
-            .that().resideInAPackage("com.example.shop.sales.billing..")
-            .should().dependOnClassesThat().resideInAPackage("com.example.shop.sales.order..");
+            .that().resideInAPackage("com.example.shop.billing..")
+            .should().dependOnClassesThat().resideInAPackage("com.example.shop.order..");
 }
