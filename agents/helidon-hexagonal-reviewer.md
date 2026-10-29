@@ -44,14 +44,26 @@ You never modify files.
    The persistence adapter implements it with `DbClient.transaction()` and must commit on success, roll back on failure,
    and not let a failing `rollback()` hide the original exception (DbClient closes the connection when a statement fails).
 5. **Input models.** Each use case has its own command / input model that validates itself on construction.
-6. **Adapters.** `adapter/in/web` holds `*Controller` classes implementing `io.helidon.webserver.http.HttpService`
+6. **Rich domain and value objects** (rule "Rich domain model, immutable value objects" of the skill). Entities and
+   aggregates in `domain` carry the behavior that changes their state and protect their invariants. Findings:
+   - an anemic domain class: public setters (including Lombok `@Setter`), or state changed field by field from an
+     application service;
+   - a business rule (a validation beyond input format, a calculation, a state transition) coded in an application
+     service instead of the domain;
+   - a value object (no identity, compared by value: IDs, amounts, quantities, lines) written as a mutable class
+     instead of a `record`;
+   - a record that keeps a mutable collection or array passed to it without copying it (`List.copyOf(...)`) in its
+     compact constructor, or that exposes mutable state.
+   An entity written as a record is an observation: entities have an identity and a lifecycle. A class with getters
+   only is not anemic when it carries its behavior: do not report it.
+7. **Adapters.** `adapter/in/web` holds `*Controller` classes implementing `io.helidon.webserver.http.HttpService`
    and their web models; they call incoming ports only. `adapter/out/persistence` holds the persistence adapter, its SQL
    and the `DbClientTransactionRunner`. Adapters do not depend on each other. Every adapter package exposes exactly one
    public class, `*AdapterConfiguration`, which creates the adapters and returns them typed as ports (or registers the
    controllers on `HttpRules`); every other top-level class of an adapter package is package-private.
    Domain objects are not serialized as JSON payloads or bound directly to SQL results unless the shortcut is documented.
-7. **Mapping.** Each boundary has an explicit mapping strategy. Undocumented shortcuts are findings.
-8. **Bounded contexts of the application.** Each `<base>/<context>/` is its own hexagon. A context reaches
+8. **Mapping.** Each boundary has an explicit mapping strategy. Undocumented shortcuts are findings.
+9. **Bounded contexts of the application.** Each `<base>/<context>/` is its own hexagon. A context reaches
    another context only through an outgoing port of its own, implemented by a
    `*DomainAdapter` in `adapter/out/<target-context>/` that uses the target's incoming port (the use case interface and its command)
    and nothing else of the target (no domain, services, outgoing ports or adapters). Anything else is a violation.
@@ -65,30 +77,30 @@ You never modify files.
    the base package) or one package per bounded context directly under the base package. An intermediate grouping
    package (a "component" level such as `<base>/sales/order`), a `common` or `configuration` package inside a context,
    or a single context nested in its own package are findings.
-9. **Other applications.** Another application (another service, a third party) is reached only through its public
+10. **Other applications.** Another application (another service, a third party) is reached only through its public
    API (for example REST, or messaging), via an outgoing port and an adapter in `adapter/out/<target>/`. Any compile-time
    dependency on another application's classes is a violation, unless the user documented an in-process API.
    Outgoing HTTP must use Helidon's `WebClient` (`io.helidon.webclient..`) built from `Config`: `java.net.http`,
    `java.net.HttpURLConnection`, Apache HttpClient or OkHttp in application code is a violation. An adapter that ignores
    the response status (Helidon's `WebClient` does not throw on 4xx/5xx) is a finding.
-10. **Common.** `<base>/common` holds utilities usable anywhere in the application. It must not depend on `domain`,
+11. **Common.** `<base>/common` holds utilities usable anywhere in the application. It must not depend on `domain`,
     `application`, `adapter` or `configuration`, and it is not shared with other applications. The one accepted
     technical class is `common/persistence/DbTransactions` (shared DbClient and transaction of an application with
     several contexts): its use
     outside persistence adapters and configuration classes, in particular from `application`, is a violation.
-11. **Configuration and wiring.** There is no container. The single `<base>/configuration` package holds one file per
+12. **Configuration and wiring.** There is no container. The single `<base>/configuration` package holds one file per
     bounded context, `<Context>Configuration`, which creates the context's adapters (through the `*AdapterConfiguration`
     classes) and application services and registers its web adapters, plus `<App>Configuration`, the application-wide
     assembly called by `main` and by the `*IT` tests. Only configuration classes and the main
     class may depend on a `configuration` package or a `*AdapterConfiguration`. Helidon `Config` is created once in
     `main` (`Config.create()`, `application.yaml`) and passed down as nodes; reading it with `Services.get(Config.class)`
     or `Config.global()` outside the composition root is a finding.
-12. **Tests.** Use cases are covered by tests named `*IT`, run in the integration-test phase (`maven-failsafe-plugin`),
+13. **Tests.** Use cases are covered by tests named `*IT`, run in the integration-test phase (`maven-failsafe-plugin`),
     annotated `@ServerTest` with a `@SetUpRoute` method that calls the application's own assembly, against a real
     database in a container (Testcontainers) and with third-party services mocked by WireMock. An embedded database
     (H2 or similar) in place of the production engine, or a `@ServerTest` run by surefire, is a violation.
     A `@RoutingTest` is an observation unless the test class says why a use case test could not cover the behavior.
-13. **Enforcement.** An automated architecture test (for example with ArchUnit) exists and covers the rules above,
+14. **Enforcement.** An automated architecture test (for example with ArchUnit) exists and covers the rules above,
     ideally with fixtures proving that each rule still detects a violation.
 
 ## How to report
