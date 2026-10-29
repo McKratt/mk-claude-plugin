@@ -139,10 +139,22 @@ Layout of a hexagon (`<hexagon>` = `<base>` or `<base>/<context>`):
     `new PlaceOrderService(store)`). Adapters are created in their own adapter packages (rule 7). Nothing depends on
     a `@Configuration` class.
 12. **Naming**: interfaces as in rule 3, `*Service` (application services), `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`, `<Target>RestAdapter` (or the technology used), `SpringData*Repository`, `<Context><Kind>AdapterConfiguration`, `<Context>Configuration`.
+13. **Rich domain model, immutable value objects.** The domain is **not anemic** (an *anemic domain model* is one whose
+    objects only hold data behind getters and setters while the logic lives in services): entities and aggregates carry
+    their data *and* the behavior that changes it, and protect their invariants themselves, through factory methods
+    and intention-revealing methods (`Order.place(lines, placedAt)`, `order.cancel()`), never through public setters
+    that let an application service assemble a valid state. The application service only orchestrates: it loads,
+    calls domain behavior, saves. **Value objects** (`OrderId`, `Order.Line`, an amount of money) have no identity, are
+    compared by value and are **immutable**: a change produces a new instance. That is why they are Java **`record`s**:
+    final fields, no setters, `equals`/`hashCode` by value, and validation in the compact constructor, so an invalid
+    value cannot exist. A record is only *shallowly* immutable: copy mutable components in the compact constructor
+    (`List.copyOf(...)`) and never expose mutable state. Entities have an identity and a lifecycle: they are classes, not
+    records, with `private final` fields where possible and no `@Setter` (Lombok's `@Data` and `@Value` are banned anyway).
 
 ## 4. Java 25 guidelines
 
-- Records for commands, web models, value objects and IDs.
+- Records for commands, web models, value objects and IDs: they are immutable (rule 13). Entities are classes
+  with behavior, not records.
 - Lombok may be used in `domain` and `application` (for example on entities). Declare it as compile-only with the annotation processor configured.
 - JSpecify may be used in `domain` and `application`: `@NullMarked` on packages, `@Nullable` where null is a legitimate value. Add `org.jspecify:jspecify` (version managed by the Spring Boot BOM) as a regular dependency.
 - Sealed interfaces and pattern-matching `switch` for closed domain variants (for example result types).
@@ -235,3 +247,7 @@ Complement with, in this order of importance:
   "Services" (domain services: optional, for domain operations that do not belong to one entity or value object).
 - Chapter topics of Hombergs' book used: use cases and input validation, web and persistence adapters, testing,
   mapping strategies, assembling the application, conscious shortcuts and boundary enforcement.
+- Rich domain model and value objects: Martin Fowler, "AnemicDomainModel" (https://martinfowler.com/bliki/AnemicDomainModel.html);
+  value objects as immutable, compared by value: Eric Evans, *Domain-Driven Design* (Addison-Wesley, 2003), and Vaughn
+  Vernon, *Implementing Domain-Driven Design*, chapter "Value Objects"; records: the Javadoc of `java.lang.Record`
+  ("A record class is a shallowly immutable, transparent carrier for a fixed set of values").
