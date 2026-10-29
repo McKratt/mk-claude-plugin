@@ -182,8 +182,9 @@ main class may depend on them.
     - Pass an `OffsetDateTime` (UTC) for a `TIMESTAMP WITH TIME ZONE` column.
     The schema is applied by Flyway (`flyway-core` + `flyway-database-<engine>`) from the persistence adapter
     configuration, before the `DbClient` is used. Do not use embedded substitutes such as H2.
-    With several contexts, **each context owns a database schema** (for example `sales_order`, `sales_billing`) and
-    migrates it with its own Flyway (`.schemas("sales_billing").locations("classpath:db/migration/billing")`, which
+    With several contexts, **each context owns a database schema**, named after the context (for example `billing`;
+    `ordering` for the `order` context, because `ORDER` is a reserved SQL word that would need quoting everywhere), and
+    migrates it with its own Flyway (`.schemas("billing").locations("classpath:db/migration/billing")`, which
     also keeps its history table in that schema); its SQL names the schema, and no foreign key crosses contexts.
 14. **Naming**: interfaces as in rule 3, `*Service`, `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`,
     `<Target>RestAdapter` (or the technology used), `DbClientTransactionRunner`, `DbTransactions`,

@@ -40,9 +40,9 @@ class OrderToInvoiceIT {
 
     @BeforeEach
     void clean_database() {
-        DB.execute().delete("DELETE FROM sales_billing.invoices");
-        DB.execute().delete("DELETE FROM sales_order.order_lines");
-        DB.execute().delete("DELETE FROM sales_order.orders");
+        DB.execute().delete("DELETE FROM billing.invoices");
+        DB.execute().delete("DELETE FROM ordering.order_lines");
+        DB.execute().delete("DELETE FROM ordering.orders");
     }
 
     @Test
@@ -67,18 +67,18 @@ class OrderToInvoiceIT {
     /** Billing joins order's transaction (shared DbTransactions): a billing failure rolls the order back. */
     @Test
     void should_store_no_order_when_billing_fails_to_create_the_invoice() {
-        DB.execute().dml("CREATE OR REPLACE FUNCTION sales_billing.fail_invoice() RETURNS trigger"
+        DB.execute().dml("CREATE OR REPLACE FUNCTION billing.fail_invoice() RETURNS trigger"
                 + " LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'billing down'; END $$");
-        DB.execute().dml("CREATE TRIGGER fail_invoice BEFORE INSERT ON sales_billing.invoices"
-                + " FOR EACH ROW EXECUTE FUNCTION sales_billing.fail_invoice()");
+        DB.execute().dml("CREATE TRIGGER fail_invoice BEFORE INSERT ON billing.invoices"
+                + " FOR EACH ROW EXECUTE FUNCTION billing.fail_invoice()");
         try (var response = postOrder("{\"lines\":[{\"sku\":\"SKU-1\",\"quantity\":1}]}")) {
             assertThat(response.status().family()).isEqualTo(Status.Family.SERVER_ERROR);
         } finally {
-            DB.execute().dml("DROP TRIGGER fail_invoice ON sales_billing.invoices");
+            DB.execute().dml("DROP TRIGGER fail_invoice ON billing.invoices");
         }
 
-        assertThat(count("sales_order.orders")).isZero();
-        assertThat(count("sales_order.order_lines")).isZero();
+        assertThat(count("ordering.orders")).isZero();
+        assertThat(count("ordering.order_lines")).isZero();
     }
 
     /**
@@ -87,18 +87,18 @@ class OrderToInvoiceIT {
      */
     @Test
     void should_store_no_invoice_when_the_order_transaction_fails_at_commit() {
-        DB.execute().dml("CREATE OR REPLACE FUNCTION sales_order.fail_at_commit() RETURNS trigger"
+        DB.execute().dml("CREATE OR REPLACE FUNCTION ordering.fail_at_commit() RETURNS trigger"
                 + " LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'commit refused'; END $$");
-        DB.execute().dml("CREATE CONSTRAINT TRIGGER fail_at_commit AFTER INSERT ON sales_order.orders"
-                + " DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION sales_order.fail_at_commit()");
+        DB.execute().dml("CREATE CONSTRAINT TRIGGER fail_at_commit AFTER INSERT ON ordering.orders"
+                + " DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION ordering.fail_at_commit()");
         try (var response = postOrder("{\"lines\":[{\"sku\":\"SKU-1\",\"quantity\":1}]}")) {
             assertThat(response.status().family()).isEqualTo(Status.Family.SERVER_ERROR);
         } finally {
-            DB.execute().dml("DROP TRIGGER fail_at_commit ON sales_order.orders");
+            DB.execute().dml("DROP TRIGGER fail_at_commit ON ordering.orders");
         }
 
-        assertThat(count("sales_order.orders")).isZero();
-        assertThat(count("sales_billing.invoices")).isZero();
+        assertThat(count("ordering.orders")).isZero();
+        assertThat(count("billing.invoices")).isZero();
     }
 
     @Test
@@ -114,8 +114,8 @@ class OrderToInvoiceIT {
             assertThat(response.status()).isEqualTo(Status.BAD_REQUEST_400);
         }
 
-        assertThat(count("sales_order.orders")).isZero();
-        assertThat(count("sales_billing.invoices")).isZero();
+        assertThat(count("ordering.orders")).isZero();
+        assertThat(count("billing.invoices")).isZero();
     }
 
     private Http1ClientResponse postOrder(String json) {

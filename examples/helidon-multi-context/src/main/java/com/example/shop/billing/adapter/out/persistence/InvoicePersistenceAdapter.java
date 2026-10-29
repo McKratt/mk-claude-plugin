@@ -20,7 +20,7 @@ class InvoicePersistenceAdapter implements InvoiceStore, InvoiceFinder {
     @Override
     public void save(Invoice invoice) {
         dbTransactions.executor().insert(
-                "INSERT INTO sales_billing.invoices (id, order_id, item_count, issued_at)"
+                "INSERT INTO billing.invoices (id, order_id, item_count, issued_at)"
                         + " VALUES (CAST(? AS UUID), CAST(? AS UUID), ?, ?)",
                 invoice.getId(), invoice.getOrderId(), invoice.getItemCount(),
                 OffsetDateTime.ofInstant(invoice.getIssuedAt(), ZoneOffset.UTC));
@@ -29,7 +29,7 @@ class InvoicePersistenceAdapter implements InvoiceStore, InvoiceFinder {
     @Override
     public Optional<Invoice> loadByOrderId(UUID orderId) {
         return dbTransactions.executor()
-                .get("SELECT CAST(id AS VARCHAR) AS id, item_count, issued_at FROM sales_billing.invoices"
+                .get("SELECT CAST(id AS VARCHAR) AS id, item_count, issued_at FROM billing.invoices"
                         + " WHERE order_id = CAST(? AS UUID)", orderId)
                 .map(row -> toInvoice(row, orderId));
     }
