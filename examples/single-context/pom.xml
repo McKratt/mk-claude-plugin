@@ -20,7 +20,7 @@
   <properties>
     <java.version>25</java.version>
     <archunit.version>1.5.1</archunit.version>
-    <wiremock-spring-boot.version>4.0.9</wiremock-spring-boot.version>
+    <wiremock-spring-boot.version>4.4.3</wiremock-spring-boot.version>
   </properties>
 
   <dependencies>
