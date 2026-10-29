@@ -38,13 +38,13 @@ public final class BillingPersistenceAdapterConfiguration {
         return transactionRunner;
     }
 
-    /** The context owns its schema (billing) and its own Flyway history in it. */
+    /** The context owns its schema (shop_billing) and its own Flyway history in it. */
     private static void migrate(Config connection) {
         Flyway.configure()
                 .dataSource(connection.get("url").asString().get(),
                         connection.get("username").asString().get(),
                         connection.get("password").asString().get())
-                .schemas("billing")
+                .schemas("shop_billing")
                 .locations("classpath:db/migration/billing")
                 .load()
                 .migrate();
