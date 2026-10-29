@@ -3,7 +3,7 @@ server:
   host: 0.0.0.0
 
 # One Helidon DbClient (JDBC + Hikari) for the application; each bounded context owns its own schema
-# (ordering, billing). Environment variables override these keys, for example DB_CONNECTION_URL.
+# (shop_order, shop_billing). Environment variables override these keys, for example DB_CONNECTION_URL.
 db:
   source: jdbc
   connection:

@@ -1165,13 +1165,13 @@ public final class BillingPersistenceAdapterConfiguration {
         return transactionRunner;
     }
 
-    /** The context owns its schema (billing) and its own Flyway history in it. */
+    /** The context owns its schema (shop_billing) and its own Flyway history in it. */
     private static void migrate(Config connection) {
         Flyway.configure()
                 .dataSource(connection.get("url").asString().get(),
                         connection.get("username").asString().get(),
                         connection.get("password").asString().get())
-                .schemas("billing")
+                .schemas("shop_billing")
                 .locations("classpath:db/migration/billing")
                 .load()
                 .migrate();
@@ -1203,7 +1203,7 @@ class InvoicePersistenceAdapter implements InvoiceStore, InvoiceFinder {
     @Override
     public void save(Invoice invoice) {
         dbTransactions.executor().insert(
-                "INSERT INTO billing.invoices (id, order_id, item_count, issued_at)"
+                "INSERT INTO shop_billing.invoices (id, order_id, item_count, issued_at)"
                         + " VALUES (CAST(? AS UUID), CAST(? AS UUID), ?, ?)",
                 invoice.getId(), invoice.getOrderId(), invoice.getItemCount(),
                 OffsetDateTime.ofInstant(invoice.getIssuedAt(), ZoneOffset.UTC));
@@ -1212,7 +1212,7 @@ class InvoicePersistenceAdapter implements InvoiceStore, InvoiceFinder {
     @Override
     public Optional<Invoice> loadByOrderId(UUID orderId) {
         return dbTransactions.executor()
-                .get("SELECT CAST(id AS VARCHAR) AS id, item_count, issued_at FROM billing.invoices"
+                .get("SELECT CAST(id AS VARCHAR) AS id, item_count, issued_at FROM shop_billing.invoices"
                         + " WHERE order_id = CAST(? AS UUID)", orderId)
                 .map(row -> toInvoice(row, orderId));
     }
@@ -1229,7 +1229,7 @@ class InvoicePersistenceAdapter implements InvoiceStore, InvoiceFinder {
 
 ```sql
 -- src/main/resources/db/migration/billing/V1__create_invoices.sql
--- No foreign key to ordering: the billing context does not depend on the order context's tables.
+-- No foreign key to shop_order: the billing context does not depend on the order context's tables.
 CREATE TABLE invoices (
     id         UUID PRIMARY KEY,
     order_id   UUID                     NOT NULL UNIQUE,
@@ -1396,18 +1396,18 @@ context, the invoice would stay. The full test is `examples/helidon-multi-contex
      */
     @Test
     void should_store_no_invoice_when_the_order_transaction_fails_at_commit() {
-        DB.execute().dml("CREATE OR REPLACE FUNCTION ordering.fail_at_commit() RETURNS trigger"
+        DB.execute().dml("CREATE OR REPLACE FUNCTION shop_order.fail_at_commit() RETURNS trigger"
                 + " LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'commit refused'; END $$");
-        DB.execute().dml("CREATE CONSTRAINT TRIGGER fail_at_commit AFTER INSERT ON ordering.orders"
-                + " DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION ordering.fail_at_commit()");
+        DB.execute().dml("CREATE CONSTRAINT TRIGGER fail_at_commit AFTER INSERT ON shop_order.orders"
+                + " DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION shop_order.fail_at_commit()");
         try (var response = postOrder("{\"lines\":[{\"sku\":\"SKU-1\",\"quantity\":1}]}")) {
             assertThat(response.status().family()).isEqualTo(Status.Family.SERVER_ERROR);
         } finally {
-            DB.execute().dml("DROP TRIGGER fail_at_commit ON ordering.orders");
+            DB.execute().dml("DROP TRIGGER fail_at_commit ON shop_order.orders");
         }
 
-        assertThat(count("ordering.orders")).isZero();
-        assertThat(count("billing.invoices")).isZero();
+        assertThat(count("shop_order.orders")).isZero();
+        assertThat(count("shop_billing.invoices")).isZero();
     }
 ```
 

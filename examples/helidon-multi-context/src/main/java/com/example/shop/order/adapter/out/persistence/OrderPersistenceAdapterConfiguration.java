@@ -33,13 +33,13 @@ public final class OrderPersistenceAdapterConfiguration {
         return transactionRunner;
     }
 
-    /** The context owns its schema (ordering) and its own Flyway history in it. */
+    /** The context owns its schema (shop_order) and its own Flyway history in it. */
     private static void migrate(Config connection) {
         Flyway.configure()
                 .dataSource(connection.get("url").asString().get(),
                         connection.get("username").asString().get(),
                         connection.get("password").asString().get())
-                .schemas("ordering")
+                .schemas("shop_order")
                 .locations("classpath:db/migration/order")
                 .load()
                 .migrate();

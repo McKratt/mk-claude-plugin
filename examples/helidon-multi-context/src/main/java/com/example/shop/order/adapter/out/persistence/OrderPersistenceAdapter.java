@@ -20,10 +20,10 @@ class OrderPersistenceAdapter implements OrderStore {
     public void save(Order order) {
         var db = dbTransactions.executor();
         var orderId = order.getId().value();
-        db.insert("INSERT INTO ordering.orders (id, placed_at) VALUES (CAST(? AS UUID), ?)",
+        db.insert("INSERT INTO shop_order.orders (id, placed_at) VALUES (CAST(? AS UUID), ?)",
                 orderId, OffsetDateTime.ofInstant(order.getPlacedAt(), ZoneOffset.UTC));
         for (var line : order.getLines()) {
-            db.insert("INSERT INTO ordering.order_lines (order_id, sku, quantity) VALUES (CAST(? AS UUID), ?, ?)",
+            db.insert("INSERT INTO shop_order.order_lines (order_id, sku, quantity) VALUES (CAST(? AS UUID), ?, ?)",
                     orderId, line.sku(), line.quantity());
         }
     }

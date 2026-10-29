@@ -1,4 +1,4 @@
--- No foreign key to ordering: the billing context does not depend on the order context's tables.
+-- No foreign key to shop_order: the billing context does not depend on the order context's tables.
 CREATE TABLE invoices (
     id         UUID PRIMARY KEY,
     order_id   UUID                     NOT NULL UNIQUE,
