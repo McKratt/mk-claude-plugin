@@ -39,15 +39,27 @@ You never modify files.
    service instead of the domain is a finding. Domain services in `domain/service` are optional; one that holds no
    domain logic spanning several aggregates (a pass-through, or one doing transactions or calling ports) is a finding.
 4. **Input models.** Each use case has its own command / input model that validates itself on construction.
-5. **Adapters.** `adapter/in/web` holds controllers and web models; `adapter/out/persistence`
+5. **Rich domain and value objects** (rule "Rich domain model, immutable value objects" of the skill). Entities and
+   aggregates in `domain` carry the behavior that changes their state and protect their invariants. Findings:
+   - an anemic domain class: public setters (including Lombok `@Setter`), or state changed field by field from an
+     application service;
+   - a business rule (a validation beyond input format, a calculation, a state transition) coded in an application
+     service instead of the domain;
+   - a value object (no identity, compared by value: IDs, amounts, quantities, lines) written as a mutable class
+     instead of a `record`;
+   - a record that keeps a mutable collection or array passed to it without copying it (`List.copyOf(...)`) in its
+     compact constructor, or that exposes mutable state.
+   An entity written as a record is an observation: entities have an identity and a lifecycle. A class with getters
+   only is not anemic when it carries its behavior: do not report it.
+6. **Adapters.** `adapter/in/web` holds controllers and web models; `adapter/out/persistence`
    holds the persistence adapter, JPA entities and mappers. Adapters do not depend on each other.
    Adapter classes are package-private and carry no `@Component`, `@Service` or `@Repository`. Each outgoing adapter
    package has its own `@Configuration` class with the `@Bean` methods that create them. Controllers are the only
    exception: they keep `@RestController` (Spring MVC requires it) and handle errors with `@ExceptionHandler`
    methods in themselves rather than a `@RestControllerAdvice`.
    Domain objects are not used as JPA entities or JSON payloads unless the shortcut is documented.
-6. **Mapping.** Each boundary has an explicit mapping strategy. Undocumented shortcuts are findings.
-7. **Bounded contexts of the application.** Each `<base>/<context>/` is its own hexagon. A context reaches
+7. **Mapping.** Each boundary has an explicit mapping strategy. Undocumented shortcuts are findings.
+8. **Bounded contexts of the application.** Each `<base>/<context>/` is its own hexagon. A context reaches
    another context only through an outgoing port of its own, implemented by a
    `*DomainAdapter` in `adapter/out/<target-context>/` that uses the target's incoming port (the use case interface and its command)
    and nothing else of the target (no domain, services, outgoing ports or adapters). Anything else is a violation.
@@ -56,23 +68,23 @@ You never modify files.
    the base package) or one package per bounded context directly under the base package. An intermediate grouping
    package (a "component" level such as `<base>/sales/order`), a `common` or `configuration` package inside a context,
    or a single context nested in its own package are findings.
-8. **Other applications.** Another application (another service, a third party) is reached only through its public
+9. **Other applications.** Another application (another service, a third party) is reached only through its public
    API (for example REST, or messaging), via an outgoing port and an adapter in `adapter/out/<target>/`. Any compile-time
    dependency on another application's classes is a violation, unless the user documented an in-process API.
    Outgoing HTTP must use Spring's `RestClient` created from the injected `RestClient.Builder`: a use of
    `java.net.http.HttpClient`, `RestClient.builder()` / `RestClient.create()` or another raw HTTP client in application code is a violation.
-9. **Common.** `<base>/common` holds utilities usable anywhere in the application. It must not depend on `domain`,
+10. **Common.** `<base>/common` holds utilities usable anywhere in the application. It must not depend on `domain`,
    `application`, `adapter` or `configuration`, and it is not shared with other applications.
-10. **Configuration.** The single `<base>/configuration` package holds one file per bounded context
+11. **Configuration.** The single `<base>/configuration` package holds one file per bounded context
    (`<Context>Configuration`, with the `@Bean` methods of its application services) and the general Spring Java config
    (`Clock`, security, web...). Adapters are created by the `*AdapterConfiguration` class of their own adapter package.
    Nothing may depend on a `@Configuration` class.
-11. **Tests** (see the `java-testing` skill of this plugin). Use cases are covered by `@SpringBootTest` tests named `*IT`
+12. **Tests** (see the `java-testing` skill of this plugin). Use cases are covered by `@SpringBootTest` tests named `*IT`
    that run in the integration-test phase (`maven-failsafe-plugin`), with a real database in a container (Testcontainers)
    and third-party services mocked by WireMock. An embedded database (H2 or similar) in place of the production engine,
    or a `@SpringBootTest` run by surefire, is a violation. A slice test (`@WebMvcTest`, `@DataJpaTest`) is an
    observation unless the test class says why a use case test could not cover the behavior.
-12. **Enforcement.** An automated architecture test (for example with ArchUnit) exists and covers the rules above.
+13. **Enforcement.** An automated architecture test (for example with ArchUnit) exists and covers the rules above.
 
 ## How to report
 
