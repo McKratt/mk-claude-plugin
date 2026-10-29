@@ -1,8 +1,0 @@
-{
-  "name": "mk-claude-plugin",
-  "description": "Personal Claude Code plugin: skills and agents for Java projects (Spring Boot, Helidon SE)",
-  "version": "0.0.4",
-  "author": {
-    "name": "McKratt"
-  }
-}

@@ -719,7 +719,7 @@ context (`OrderConfiguration`, `BillingConfiguration`).
 
 ## Use case integration test (`*IT`)
 
-Priority test type; the `java-testing` skill of this plugin has the full rules. Build setup (Maven):
+Priority test type; the `java-testing` skill (`mk-java` plugin) has the general rules and `spring-testing` (this plugin) the Spring mechanics. Build setup (Maven):
 `org.postgresql:postgresql` (runtime), and in test scope `spring-boot-starter-test`, `spring-boot-starter-webmvc-test`,
 `spring-boot-starter-data-jpa-test`, `spring-boot-testcontainers`, `org.testcontainers:testcontainers-postgresql` and,
 for third-party APIs, `org.wiremock.integrations:wiremock-spring-boot` (WireMock's Spring Boot integration). Failsafe
@@ -813,11 +813,11 @@ class PlaceOrderIT {
 }
 ```
 
-See `examples/single-context` (WireMock) and `examples/multi-context` (two contexts through one HTTP call) in the plugin repository for complete, CI-validated versions.
+See, in the McKratt/mk-claude-plugin repository, `examples/single-context` (WireMock) and `examples/multi-context` (two contexts through one HTTP call) in the plugin repository for complete, CI-validated versions.
 
 ## Test examples
 
-Unit tests follow the `java-testing` skill: AssertJ assertions and BDD Mockito notation.
+Unit tests follow the `java-testing` skill (`mk-java` plugin): AssertJ assertions and BDD Mockito notation.
 
 Service test with a mocked outgoing port:
 

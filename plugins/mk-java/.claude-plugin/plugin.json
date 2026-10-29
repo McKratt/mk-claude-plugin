@@ -1,0 +1,8 @@
+{
+  "name": "mk-java",
+  "description": "Java skills shared by the McKratt plugins: testing rules (use case tests first, Testcontainers, WireMock, failsafe, AssertJ, BDD Mockito)",
+  "version": "0.0.5",
+  "author": {
+    "name": "McKratt"
+  }
+}
