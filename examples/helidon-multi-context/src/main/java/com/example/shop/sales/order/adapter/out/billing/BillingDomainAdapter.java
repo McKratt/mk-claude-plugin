@@ -2,7 +2,7 @@ package com.example.shop.sales.order.adapter.out.billing;
 
 import com.example.shop.sales.billing.application.port.in.CreateInvoiceCommand;
 import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
-import com.example.shop.sales.order.application.domain.model.Order;
+import com.example.shop.sales.order.domain.Order;
 import com.example.shop.sales.order.application.port.out.InvoiceIssuer;
 import lombok.RequiredArgsConstructor;
 

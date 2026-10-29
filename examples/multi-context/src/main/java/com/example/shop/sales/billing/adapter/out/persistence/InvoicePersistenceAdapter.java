@@ -1,6 +1,6 @@
 package com.example.shop.sales.billing.adapter.out.persistence;
 
-import com.example.shop.sales.billing.application.domain.model.Invoice;
+import com.example.shop.sales.billing.domain.Invoice;
 import com.example.shop.sales.billing.application.port.out.InvoiceFinder;
 import com.example.shop.sales.billing.application.port.out.InvoiceStore;
 import java.util.Optional;

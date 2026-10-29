@@ -18,36 +18,36 @@ class ArchitectureTest {
             "org.eclipse.persistence..", "org.mybatis..",
             "com.fasterxml.jackson..", "tools.jackson..", "jakarta.json..", "com.google.gson..", "org.json.."};
 
-    // Lombok (lombok..) and JSpecify (org.jspecify..) are deliberately not forbidden anywhere in the application.
+    // Lombok (lombok..) and JSpecify (org.jspecify..) are deliberately not forbidden in domain and application.
     @ArchTest
-    static final ArchRule domainHasNoOrmOrJson = noClasses()
-            .that().resideInAPackage("..application..")
+    static final ArchRule domainAndApplicationHaveNoOrmOrJson = noClasses()
+            .that().resideInAnyPackage("..domain..", "..application..")
             .should().dependOnClassesThat().resideInAnyPackage(ORM_AND_JSON);
 
-    // Helidon SE has no @Transactional to tolerate: the whole application (domain and ports) is free of
-    // Helidon and of any container API. Transactions go through an outgoing port.
+    // Domain and application are free of Helidon and of any container API. The application services own the
+    // transaction boundary, through an outgoing port (TransactionRunner).
     @ArchTest
-    static final ArchRule applicationIsFrameworkFree = noClasses()
-            .that().resideInAPackage("..application..")
+    static final ArchRule domainAndApplicationAreFrameworkFree = noClasses()
+            .that().resideInAnyPackage("..domain..", "..application..")
             .should().dependOnClassesThat().resideInAnyPackage(
                     "io.helidon..", "jakarta.inject..", "jakarta.enterprise..", "jakarta.ws.rs..",
                     "org.springframework..");
 
     @ArchTest
-    static final ArchRule modelIsSelfContained = noClasses()
-            .that().resideInAPackage("..application.domain.model..")
-            .should().dependOnClassesThat().resideInAnyPackage(
-                    "..application.domain.service..", "..application.port..", "..adapter..");
+    static final ArchRule domainIsSelfContained = noClasses()
+            .that().resideInAPackage("..domain..")
+            .should().dependOnClassesThat().resideInAnyPackage("..application..", "..adapter..");
 
     @ArchTest
     static final ArchRule servicesDoNotUseAdapters = noClasses()
-            .that().resideInAPackage("..application.domain.service..")
+            .that().resideInAPackage("..application.service..")
             .should().dependOnClassesThat().resideInAPackage("..adapter..");
 
     @ArchTest
     static final ArchRule commonIsIndependent = noClasses()
             .that().resideInAPackage("..common..")
-            .should().dependOnClassesThat().resideInAnyPackage("..application..", "..adapter..", "..configuration..");
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "..domain..", "..application..", "..adapter..", "..configuration..");
 
     @ArchTest
     static final ArchRule applicationDoesNotDependOnAdapters = noClasses()

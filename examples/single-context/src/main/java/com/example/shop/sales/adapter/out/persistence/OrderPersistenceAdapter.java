@@ -1,6 +1,6 @@
 package com.example.shop.sales.adapter.out.persistence;
 
-import com.example.shop.sales.application.domain.model.Order;
+import com.example.shop.sales.domain.Order;
 import com.example.shop.sales.application.port.out.OrderStore;
 import lombok.RequiredArgsConstructor;
 

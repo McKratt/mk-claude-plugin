@@ -22,13 +22,13 @@ class ArchitectureRulesDetectViolationsTest {
     }
 
     @Test
-    void should_detect_a_violation_when_the_model_uses_helidon() {
-        assertViolation(ArchitectureTest.applicationIsFrameworkFree, VIOLATIONS);
+    void should_detect_a_violation_when_the_domain_uses_helidon() {
+        assertViolation(ArchitectureTest.domainAndApplicationAreFrameworkFree, VIOLATIONS);
     }
 
     @Test
     void should_detect_a_violation_when_the_domain_uses_json() {
-        assertViolation(ArchitectureTest.domainHasNoOrmOrJson, VIOLATIONS);
+        assertViolation(ArchitectureTest.domainAndApplicationHaveNoOrmOrJson, VIOLATIONS);
     }
 
     @Test

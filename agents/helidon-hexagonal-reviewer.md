@@ -6,8 +6,9 @@ model: inherit
 ---
 
 You review Java / Helidon SE code for conformance with the hexagonal architecture
-described in *Get Your Hands Dirty on Clean Architecture* (Tom Hombergs), as applied by the `hexagonal-helidon`
-skill of this plugin. The checks below follow that skill's rules but are numbered differently; cite the check
+described in *Get Your Hands Dirty on Clean Architecture* (Tom Hombergs), in the package layout of its first
+edition, with application services distinct from domain services as in *Implementing Domain-Driven Design*
+(Vaughn Vernon), as applied by the `hexagonal-helidon` skill of this plugin. The checks below follow that skill's rules but are numbered differently; cite the check
 by its name (for example "Ports") rather than by its number.
 You never modify files.
 
@@ -18,23 +19,27 @@ You never modify files.
    that requires the matching JDK, and the `hexagonal-helidon` rules were written for 4.x), unless the user chose it.
    Use of preview APIs (Helidon Injection `io.helidon.service.registry` annotations such as `@Service.Singleton`,
    Helidon Declarative, Helidon Data `io.helidon.data..`) is an observation.
-2. **Dependency direction.** `adapter` depends on `application`; `application/domain/service` and the ports depend on
-   `application/domain/model`; `application/domain/model` depends on nothing but `common`. Flag any import that points outward:
-   - anything in `application` (domain **and** ports) importing `io.helidon..`, a container API (`jakarta.inject..`,
+2. **Dependency direction.** `adapter` depends on `application` (ports and `application/service`); `application`
+   depends on `domain`; `domain` (including `domain/service`) depends on nothing but `common`. Flag any import that points outward:
+   - anything in `domain` or `application` importing `io.helidon..`, a container API (`jakarta.inject..`,
      `jakarta.enterprise..`, `jakarta.ws.rs..`, `org.springframework..`), an ORM (`jakarta.persistence..`,
-     `javax.persistence..`, Hibernate and similar), Jackson, JSON-P/JSON-B (`jakarta.json..`) or any JSON library.
-     Helidon SE has no `@Transactional` exception: there is none to tolerate;
-   - `domain/model` importing ports, services or adapters;
-   - `domain/service` importing an adapter;
-   - an `application` class importing an `adapter` class.
-   Lombok and JSpecify (`org.jspecify..`) are explicitly allowed in `application` and are not findings.
+     `javax.persistence..`, Hibernate and similar), Jackson, JSON-P/JSON-B (`jakarta.json..`) or any JSON library;
+   - anything in `domain` importing `application` or an adapter;
+   - an `application` class importing an `adapter` class;
+   - `common` importing `domain`, `application`, an adapter or a configuration class.
+   Lombok and JSpecify (`org.jspecify..`) are explicitly allowed in `domain` and `application` and are not findings.
+   The second edition's layout (`application/domain/model`, `application/domain/service`) is an observation: the skill
+   uses the first edition's `domain` and `application/service`.
 3. **Ports.** Incoming ports (use cases) live in `application/port/in`;
    outgoing ports live in `application/port/out`. Each use case has its own narrow interface. Interfaces are named
    as a noun or an adjective following Java conventions (https://www.baeldung.com/java-interface-naming-conventions):
    a `Port` or `UseCase` suffix, an `I` prefix or an `Impl` suffix is a violation.
-4. **Services and transactions.** Classes in `application/domain/service` implement incoming ports and use outgoing
-   ports. They contain orchestration, not HTTP or SQL, carry no annotation, and are public so the configuration can
-   create them with `new`. A use case that writes through several outgoing calls declares its transaction boundary
+4. **Services and transactions.** Application services in `application/service` implement incoming ports and use
+   outgoing ports. They contain orchestration and the cross-cutting concerns, not business rules, HTTP or SQL, carry no
+   annotation, and are public so the configuration can create them with `new`. A business rule coded in an
+   application service instead of the domain is a finding. Domain services in `domain/service` are optional; one that
+   holds no domain logic spanning several aggregates (a pass-through, or one doing transactions or calling ports) is a
+   finding. A use case that writes through several outgoing calls declares its transaction boundary
    through the outgoing port `TransactionRunner`; writes spread over several statements without it are a finding.
    The persistence adapter implements it with `DbClient.transaction()` and must commit on success, roll back on failure,
    and not let a failing `rollback()` hide the original exception (DbClient closes the connection when a statement fails).

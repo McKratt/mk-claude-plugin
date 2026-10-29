@@ -1,6 +1,6 @@
 package com.example.shop.sales.adapter.out.shipping;
 
-import com.example.shop.sales.application.domain.model.Order;
+import com.example.shop.sales.domain.Order;
 import com.example.shop.sales.application.port.out.ShipmentRequester;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;

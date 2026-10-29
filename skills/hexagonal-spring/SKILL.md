@@ -1,13 +1,18 @@
 ---
 name: hexagonal-spring
-description: Scaffold or restructure a Spring Boot project on Java 25 using hexagonal architecture as taught in "Get Your Hands Dirty on Clean Architecture" (Tom Hombergs). Use when the user wants to start a new Spring Boot service, add a use case or bounded context, or reorganize packages into ports and adapters.
+description: Scaffold or restructure a Spring Boot project on Java 25 using hexagonal architecture as taught in "Get Your Hands Dirty on Clean Architecture" (Tom Hombergs, first-edition package layout), with application services distinct from domain services as in "Implementing Domain-Driven Design" (Vaughn Vernon). Use when the user wants to start a new Spring Boot service, add a use case or bounded context, or reorganize packages into ports and adapters.
 ---
 
 # Hexagonal Spring Boot (Java 25)
 
 Structure Spring Boot projects with the ports-and-adapters style from
-*Get Your Hands Dirty on Clean Architecture*. The business domain sits at the center;
-web, persistence and other technology are replaceable adapters around it.
+*Get Your Hands Dirty on Clean Architecture*, in the package layout of its **first edition**. The business domain
+sits at the center; web, persistence and other technology are replaceable adapters around it.
+
+Following *Implementing Domain-Driven Design* (Vaughn Vernon), **application services** (in `application/service`)
+run the use cases and own the cross-cutting concerns (transactions, security), while the **domain** stays plain Java;
+**domain services** (in `domain/service`) are optional and exist only for a domain operation that spans several
+aggregates. See "Source" at the end for why this departs from the second edition.
 
 Ready-to-adapt code lives in [references/templates.md](references/templates.md). Read it before generating code.
 
@@ -37,13 +42,13 @@ Layout of a hexagon (`<hexagon>` = `<base>/<component>/[<context>/]`):
 
 ```
 <hexagon>/
+├── domain/                      # entities, value objects, domain rules (plain Java, no Spring at all)
+│   └── service/                 # optional domain services: a domain operation spanning several aggregates
 ├── application/
-│   ├── domain/
-│   │   ├── model/               # entities, value objects, domain rules (framework-free)
-│   │   └── service/             # *Service: implements incoming ports, uses outgoing ports
-│   └── port/
-│       ├── in/                  # incoming ports (use cases) + one command per use case
-│       └── out/                 # outgoing ports
+│   ├── port/
+│   │   ├── in/                  # incoming ports (use cases) + one command per use case
+│   │   └── out/                 # outgoing ports
+│   └── service/                 # application services *Service: implement incoming ports, own transactions and security
 ├── adapter/                     # outgoing adapter packages also hold their own *AdapterConfiguration (rule 7)
 │   ├── in/web/                  # controllers, web models
 │   ├── out/persistence/         # persistence adapter, JPA entities, mappers, Spring Data repositories
@@ -70,15 +75,17 @@ components and the `@SpringBootApplication` class:
 
 ## 3. Rules
 
-1. **Dependencies point inward.** `adapter` → `application` (ports and `domain/service`) → `domain/model`.
-   - `domain/model` depends on nothing but `common`: no ports, services or adapters, no Spring, no ORM
-     (JPA/Jakarta Persistence, Hibernate and similar), no Jackson or JSON annotations or types of any kind.
-   - `domain/service` may use `domain/model`, the ports and `common`, never the adapters. It is also free of
-     ORM and JSON, and of Spring annotations: **no `@Service` or `@Component`**. The single exception is
-     `@Transactional`, an accepted exception to the purity of the domain.
-   - **Lombok and JSpecify are allowed in the whole domain** (compile-time annotations only, no runtime framework
-     dependency). JSpecify (`org.jspecify.annotations`) carries the null-safety contract: mark the domain and port
-     packages `@NullMarked` in a `package-info.java` and annotate the rare nullable value with `@Nullable`.
+1. **Dependencies point inward.** `adapter` → `application` (ports and services) → `domain`.
+   - `domain` (including `domain/service`) depends on nothing but `common`: no `application`, no adapters,
+     **no Spring at all** (not even `@Transactional`), no ORM (JPA/Jakarta Persistence, Hibernate and similar),
+     no Jackson or JSON annotations or types of any kind.
+   - `application` (ports and `application/service`) may use `domain` and `common`, never the adapters. It is free
+     of ORM and JSON. From Spring it may only use the **annotations of cross-cutting concerns** on application
+     services: `@Transactional` (`org.springframework.transaction.annotation`) and method security (`@PreAuthorize`,
+     `@Secured`...). **No `@Service` or `@Component`.**
+   - **Lombok and JSpecify are allowed in `domain` and `application`** (compile-time annotations only, no runtime
+     framework dependency). JSpecify (`org.jspecify.annotations`) carries the null-safety contract: mark the domain,
+     service and port packages `@NullMarked` in a `package-info.java` and annotate the rare nullable value with `@Nullable`.
 2. **One narrow incoming port per use case** (an interface in `port/in`), named as a noun for what it offers
    (for example `OrderPlacement`, `InvoiceLookup`). Avoid "broad" service interfaces.
 3. **Outgoing ports** (interfaces in `port/out`) are named as a noun for the role they play, for example
@@ -89,11 +96,16 @@ components and the `@SpringBootApplication` class:
    prefix or an `Impl` suffix. Ports are recognized by their package, not by their name.
 4. **Each use case has its own input model** (a command). It validates itself in its constructor.
    Use a Java `record` with a compact constructor. Business rules belong in the domain model, not in the command.
-5. **Services** in `application/domain/service` implement the incoming port, orchestrate domain objects and
-   outgoing ports, and own the transaction boundary: `@Transactional` goes **on the methods, never on the class**, so each
-   use case picks its own transaction (`@Transactional(readOnly = true)` for queries) instead of every public method
-   opening a read-write transaction. They carry no stereotype annotation and are
-   created by `@Bean` methods (rule 11), so they are `public` with a public constructor.
+5. **Application services** in `application/service` implement the incoming port, orchestrate domain objects and
+   outgoing ports, and own the cross-cutting concerns of the use case. The transaction boundary: `@Transactional` goes
+   **on the methods, never on the class**, so each use case picks its own transaction (`@Transactional(readOnly = true)`
+   for queries) instead of every public method opening a read-write transaction. Authorization, when needed, goes on
+   the same methods (`@PreAuthorize`). They hold no business rule (that is the domain's job), carry no stereotype
+   annotation and are created by `@Bean` methods (rule 11), so they are `public` with a public constructor.
+   **Domain services** in `domain/service` are optional: create one only for a domain operation that does not belong
+   to a single entity or value object, typically one spanning several aggregates. They are stateless plain Java,
+   named after the operation in the ubiquitous language, use only `domain` types, and know nothing of transactions,
+   security or ports; an application service calls them.
 6. **Adapters own their models.** Web request/response records and JPA entities are separate from domain classes,
    with explicit mappers. Choose the mapping strategy per boundary (no mapping, two-way, full, one-way)
    and record any shortcut consciously, for example in an `ARCHITECTURE.md` or an ADR.
@@ -124,13 +136,13 @@ components and the `@SpringBootApplication` class:
 11. **Wiring of a hexagon.** A `@Configuration` class in `<hexagon>/configuration/` declares one `@Bean` per service
     (for example `orderPlacement(OrderStore store)` returning `new PlaceOrderService(store)`). Adapters are created
     in their own adapter packages (rule 7). Nothing depends on a `@Configuration` class.
-12. **Naming**: interfaces as in rule 3, `*Service`, `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`, `<Target>RestAdapter` (or the technology used), `SpringData*Repository`, `<Hexagon><Kind>AdapterConfiguration`.
+12. **Naming**: interfaces as in rule 3, `*Service` (application services), `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`, `<Target>RestAdapter` (or the technology used), `SpringData*Repository`, `<Hexagon><Kind>AdapterConfiguration`.
 
 ## 4. Java 25 guidelines
 
 - Records for commands, web models, value objects and IDs.
-- Lombok may be used in `application/domain` (for example on entities in `model`). Declare it as compile-only with the annotation processor configured.
-- JSpecify may be used in `application/domain` and the ports: `@NullMarked` on packages, `@Nullable` where null is a legitimate value. Add `org.jspecify:jspecify` (version managed by the Spring Boot BOM) as a regular dependency.
+- Lombok may be used in `domain` and `application` (for example on entities). Declare it as compile-only with the annotation processor configured.
+- JSpecify may be used in `domain` and `application`: `@NullMarked` on packages, `@Nullable` where null is a legitimate value. Add `org.jspecify:jspecify` (version managed by the Spring Boot BOM) as a regular dependency.
 - Sealed interfaces and pattern-matching `switch` for closed domain variants (for example result types).
 - `var` for obvious local types only; keep signatures explicit.
 - Do not enable preview features unless the user asks.
@@ -164,7 +176,7 @@ Complement with, in this order of importance:
 - **Domain**: plain unit tests, no Spring (entities, value objects, self-validating commands).
 - **Architecture**: an ArchUnit test that fails the build on dependency violations (template provided). It needs no
   server, so it is a `*Test` run by surefire.
-- **Services**: unit tests with mocked outgoing ports (Mockito, BDD notation), only for branching logic that is awkward to reach through the use case tests.
+- **Application services**: unit tests with mocked outgoing ports (Mockito, BDD notation), only for branching logic that is awkward to reach through the use case tests.
 - **Slice tests** (`@WebMvcTest`, `@DataJpaTest`): only when a use case test cannot reach the behavior, for example
   exhaustive request validation or a complex query. They are the exception, not the default.
 
@@ -172,8 +184,9 @@ Complement with, in this order of importance:
 
 - Outgoing adapters are created by `@Bean` methods in the `@Configuration` class of their adapter package (rule 7).
   Controllers (`@RestController`), JPA entities and Spring Data repositories are found by Spring Boot's scanning.
-- Services are **not** annotated: wire them with `@Bean` methods in `<hexagon>/configuration/` (rule 11).
-  `@Transactional` on service methods (never on the class) is the only Spring annotation allowed in the domain; document it in the architecture notes.
+- Application services carry no stereotype: wire them with `@Bean` methods in `<hexagon>/configuration/` (rule 11).
+  `@Transactional` (and method security) on their methods, never on the class, are the only Spring annotations in
+  `application`; the domain has none.
 - **Multi-module option**: separate Maven modules (`application` including its `domain` package, `adapter-web`,
   `adapter-persistence`, `bootstrap`) make illegal dependencies impossible to compile. Offer it for larger projects;
   single module plus ArchUnit is the default.
@@ -192,8 +205,10 @@ Complement with, in this order of importance:
 
 ## 8. When adding to an existing project
 
-- Add a new use case: new incoming port + command in `port/in`, service in `application/domain/service` (plus its `@Bean` in
-  `<hexagon>/configuration`), any new outgoing port in `port/out`, then adapter changes. Never skip the port.
+- Add a new use case: new incoming port + command in `port/in`, application service in `application/service` (plus its
+  `@Bean` in `<hexagon>/configuration`), any new outgoing port in `port/out`, then adapter changes. Never skip the port.
+  Business rules go in `domain` (or a domain service in `domain/service` when they span several aggregates), not in
+  the application service.
 - Add a new bounded context: new `<component>/<context>/` package with the same internal layout. If the component had a
   single context until now, move its packages from `<component>/` into `<component>/<context>/`.
 - Connect two bounded contexts of the same component: follow rule 8 (outgoing port + `*DomainAdapter`).
@@ -203,10 +218,17 @@ Complement with, in this order of importance:
 
 ## Source
 
-Structure and naming follow the book's package layout (`adapter/in/web`, `adapter/out/persistence`,
-`application/port/in`, `application/port/out`, `application/domain/model`, `application/domain/service`, `common`) of Tom Hombergs'
-*Get Your Hands Dirty on Clean Architecture*, 2nd edition (Packt, Java code examples). The plugin author owns this
-edition and confirmed the layout with a photo of the package tree on page 28 (chapter "Organizing Code"):
-`domain` nested in `application`, `model` and `service` inside `domain`, and a `common` package. The first edition may differ.
-Chapter topics used: use cases and input validation, web and persistence adapters, testing, mapping strategies,
-assembling the application, conscious shortcuts and boundary enforcement.
+- **Package layout: first edition** of Tom Hombergs' *Get Your Hands Dirty on Clean Architecture* (Packt), as in
+  the book's code repository `thombergs/buckpal`, branch `single-module` (2021): `account/adapter/in/web`,
+  `account/adapter/out/persistence`, `account/application/port/in`, `account/application/port/out`,
+  `account/application/service` (`SendMoneyService`), `account/domain` (`Account`, `Money`... directly, no `model`).
+  The repository switched to the second edition on 2023-06-09 (commit `ebdb694`, "Upgrade to 2nd edition").
+- **Deliberate departure from the second edition**, whose layout (page 28, confirmed by the plugin author with a
+  photo) nests `domain/model` and `domain/service` inside `application` and puts the use-case services in
+  `domain/service`. There, cross-cutting concerns such as transactions and security end up in the domain and have to
+  be tolerated as exceptions. Keeping `application/service` apart from `domain` puts them in the application layer.
+- **Application services versus domain services**: Vaughn Vernon, *Implementing Domain-Driven Design*
+  (Addison-Wesley, 2013), chapters "Application" (application services: use cases, transactions, security) and
+  "Services" (domain services: optional, for domain operations that do not belong to one entity or value object).
+- Chapter topics of Hombergs' book used: use cases and input validation, web and persistence adapters, testing,
+  mapping strategies, assembling the application, conscious shortcuts and boundary enforcement.

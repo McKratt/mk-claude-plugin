@@ -1,6 +1,6 @@
 package com.example.shop.sales.application.port.in;
 
-import com.example.shop.sales.application.domain.model.OrderId;
+import com.example.shop.sales.domain.OrderId;
 
 public interface OrderPlacement {
 

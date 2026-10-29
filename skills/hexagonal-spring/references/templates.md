@@ -3,28 +3,28 @@
 Example slice: place an order. Base package `com.example.shop`, component `sales`, bounded context `order`.
 Replace names to fit the user's domain. All code targets Java 25 and Spring Boot.
 The slice below lives in a component with several bounded contexts (`sales/order`, `sales/billing`).
-For a component with a single context, omit the context level: `com.example.shop.sales.application.domain.model`,
+For a component with a single context, omit the context level: `com.example.shop.sales.domain`,
 `com.example.shop.sales.adapter.in.web`, and so on. Utilities usable anywhere in the component go in
 `com.example.shop.sales.common`.
 
 ## Null-safety (JSpecify)
 
-Add `org.jspecify:jspecify` (version managed by the Spring Boot BOM). Mark the domain and port packages
-(`application/domain/model`, `application/domain/service`, `application/port/in`, `application/port/out`) as
+Add `org.jspecify:jspecify` (version managed by the Spring Boot BOM). Mark the domain, service and port packages
+(`domain`, `domain/service`, `application/service`, `application/port/in`, `application/port/out`) as
 `@NullMarked`, so every type is non-null unless annotated `@Nullable`:
 
 ```java
-// sales/order/application/domain/model/package-info.java
+// sales/order/domain/package-info.java
 @NullMarked
-package com.example.shop.sales.order.application.domain.model;
+package com.example.shop.sales.order.domain;
 
 import org.jspecify.annotations.NullMarked;
 ```
 
-## Domain (`sales/order/application/domain/model`)
+## Domain (`sales/order/domain`)
 
 ```java
-package com.example.shop.sales.order.application.domain.model;
+package com.example.shop.sales.order.domain;
 
 import java.util.UUID;
 
@@ -40,7 +40,7 @@ public record OrderId(UUID value) {
 ```
 
 ```java
-package com.example.shop.sales.order.application.domain.model;
+package com.example.shop.sales.order.domain;
 
 import java.util.List;
 import java.util.Objects;
@@ -76,12 +76,36 @@ public final class Order {
 }
 ```
 
+## Domain service (optional, `sales/order/domain/service`): *not in the examples*
+
+Only when a domain operation does not belong to a single entity or value object, typically when it needs several
+aggregates. Plain Java, stateless, named after the operation, no transaction, security or port: the application
+service loads the aggregates through its ports, calls the domain service and saves the result. `Customer` below
+stands for a second aggregate of the context.
+
+```java
+// sales/order/domain/service/LoyaltyDiscount.java
+package com.example.shop.sales.order.domain.service;
+
+import com.example.shop.sales.order.domain.Customer;
+import com.example.shop.sales.order.domain.Order;
+
+/** Discount rule that needs two aggregates, so it belongs to neither. */
+public final class LoyaltyDiscount {
+
+    /** @return the discount in percent: 5 for a customer with at least 10 previous orders, else 0 */
+    public int percentFor(Order order, Customer customer) {
+        return customer.previousOrderCount() >= 10 && !order.getLines().isEmpty() ? 5 : 0;
+    }
+}
+```
+
 ## Incoming port and command (`sales/order/application/port/in`)
 
 ```java
 package com.example.shop.sales.order.application.port.in;
 
-import com.example.shop.sales.order.application.domain.model.OrderId;
+import com.example.shop.sales.order.domain.OrderId;
 
 public interface OrderPlacement {
     OrderId placeOrder(PlaceOrderCommand command);
@@ -121,27 +145,28 @@ public record PlaceOrderCommand(List<Line> lines) {
 ```java
 package com.example.shop.sales.order.application.port.out;
 
-import com.example.shop.sales.order.application.domain.model.Order;
+import com.example.shop.sales.order.domain.Order;
 
 public interface OrderStore {
     void save(Order order);
 }
 ```
 
-## Service (`sales/order/application/domain/service`)
+## Application service (`sales/order/application/service`)
 
 ```java
-package com.example.shop.sales.order.application.domain.service;
+package com.example.shop.sales.order.application.service;
 
 import com.example.shop.sales.order.application.port.in.PlaceOrderCommand;
 import com.example.shop.sales.order.application.port.in.OrderPlacement;
 import com.example.shop.sales.order.application.port.out.OrderStore;
-import com.example.shop.sales.order.application.domain.model.Order;
-import com.example.shop.sales.order.application.domain.model.OrderId;
+import com.example.shop.sales.order.domain.Order;
+import com.example.shop.sales.order.domain.OrderId;
 import org.springframework.transaction.annotation.Transactional;
 
-// No @Service: the bean is declared in OrderConfiguration. @Transactional is the one accepted
-// exception to the purity of the domain. Put it on methods, never on the class, so queries can be read-only.
+// Application service: runs the use case and owns its cross-cutting concerns (here the transaction).
+// No @Service: the bean is declared in OrderConfiguration. Put @Transactional on methods, never on the class,
+// so queries can be read-only.
 public class PlaceOrderService implements OrderPlacement {
 
     private final OrderStore orderStore;
@@ -170,7 +195,7 @@ Services carry no stereotype annotation, so each one is declared with a `@Bean` 
 ```java
 package com.example.shop.sales.order.configuration;
 
-import com.example.shop.sales.order.application.domain.service.PlaceOrderService;
+import com.example.shop.sales.order.application.service.PlaceOrderService;
 import com.example.shop.sales.order.application.port.in.OrderPlacement;
 import com.example.shop.sales.order.application.port.out.OrderStore;
 import org.springframework.context.annotation.Bean;
@@ -297,7 +322,7 @@ interface SpringDataOrderRepository extends JpaRepository<OrderJpaEntity, UUID> 
 package com.example.shop.sales.order.adapter.out.persistence;
 
 import com.example.shop.sales.order.application.port.out.OrderStore;
-import com.example.shop.sales.order.application.domain.model.Order;
+import com.example.shop.sales.order.domain.Order;
 class OrderPersistenceAdapter implements OrderStore {
 
     private final SpringDataOrderRepository repository;
@@ -379,7 +404,7 @@ Source context `order`: outgoing port, written in `order`'s own language (`sales
 ```java
 package com.example.shop.sales.order.application.port.out;
 
-import com.example.shop.sales.order.application.domain.model.Order;
+import com.example.shop.sales.order.domain.Order;
 
 public interface InvoiceIssuer {
     void createInvoiceFor(Order order);
@@ -394,7 +419,7 @@ package com.example.shop.sales.order.adapter.out.billing;
 
 import com.example.shop.sales.billing.application.port.in.CreateInvoiceCommand;
 import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
-import com.example.shop.sales.order.application.domain.model.Order;
+import com.example.shop.sales.order.domain.Order;
 import com.example.shop.sales.order.application.port.out.InvoiceIssuer;
 
 class BillingDomainAdapter implements InvoiceIssuer {
@@ -442,7 +467,7 @@ here REST, and reaches it through an outgoing port and an adapter. The API could
 ```java
 package com.example.shop.sales.order.application.port.out;
 
-import com.example.shop.sales.order.application.domain.model.Order;
+import com.example.shop.sales.order.domain.Order;
 
 public interface ShipmentRequester {
     void requestShipmentFor(Order order);
@@ -452,7 +477,7 @@ public interface ShipmentRequester {
 ```java
 package com.example.shop.sales.order.adapter.out.shipping;
 
-import com.example.shop.sales.order.application.domain.model.Order;
+import com.example.shop.sales.order.domain.Order;
 import com.example.shop.sales.order.application.port.out.ShipmentRequester;
 import java.util.UUID;
 import org.springframework.web.client.RestClient;
@@ -525,6 +550,7 @@ package com.example.shop;
 
 import static com.tngtech.archunit.base.DescribedPredicate.not;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyPackage;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
@@ -545,42 +571,47 @@ class ArchitectureTest {
             "org.eclipse.persistence..", "org.mybatis..",
             "com.fasterxml.jackson..", "tools.jackson..", "jakarta.json..", "com.google.gson..", "org.json.."};
 
-    // Lombok (lombok..) is deliberately not forbidden anywhere in the domain.
+    // Lombok (lombok..) and JSpecify (org.jspecify..) are deliberately not forbidden anywhere.
     @ArchTest
-    static final ArchRule domainHasNoOrmOrJson = noClasses()
-            .that().resideInAPackage("..application.domain..")
+    static final ArchRule domainAndApplicationHaveNoOrmOrJson = noClasses()
+            .that().resideInAnyPackage("..domain..", "..application..")
             .should().dependOnClassesThat().resideInAnyPackage(ORM_AND_JSON);
 
+    // The domain (entities, value objects, optional domain services in domain.service) is plain Java:
+    // no Spring at all, not even @Transactional, which belongs to the application services.
     @ArchTest
-    static final ArchRule modelIsFrameworkFreeAndSelfContained = noClasses()
-            .that().resideInAPackage("..application.domain.model..")
+    static final ArchRule domainIsFrameworkFreeAndSelfContained = noClasses()
+            .that().resideInAPackage("..domain..")
             .should().dependOnClassesThat().resideInAnyPackage(
-                    "..application.domain.service..", "..application.port..", "..adapter..",
-                    "org.springframework..");
+                    "..application..", "..adapter..", "org.springframework..");
 
     @ArchTest
     static final ArchRule servicesDoNotUseAdapters = noClasses()
-            .that().resideInAPackage("..application.domain.service..")
+            .that().resideInAPackage("..application.service..")
             .should().dependOnClassesThat().resideInAPackage("..adapter..");
 
-    // @Service and @Component are forbidden on services; only @Transactional (with its Propagation/Isolation members) is allowed.
+    // Application services own the cross-cutting concerns of a use case: transactions (@Transactional, with its
+    // Propagation/Isolation members) and method security (@PreAuthorize, @Secured...). Nothing else from Spring:
+    // no @Service or @Component, the services are created by @Bean methods.
     @ArchTest
-    static final ArchRule servicesUseSpringOnlyForTransactional = noClasses()
-            .that().resideInAPackage("..application.domain.service..")
+    static final ArchRule applicationUsesSpringOnlyForCrossCuttingConcerns = noClasses()
+            .that().resideInAPackage("..application..")
             .should().dependOnClassesThat(
                     resideInAPackage("org.springframework..")
-                            .and(not(resideInAPackage("org.springframework.transaction.annotation"))));
+                            .and(not(resideInAnyPackage("org.springframework.transaction.annotation",
+                                    "org.springframework.security.access.prepost",
+                                    "org.springframework.security.access.annotation"))));
 
     @ArchTest
     static final ArchRule transactionalIsNeverOnAServiceClass = noClasses()
-            .that().resideInAPackage("..application.domain.service..")
+            .that().resideInAPackage("..application.service..")
             .should().beAnnotatedWith(Transactional.class);
 
     @ArchTest
     static final ArchRule commonIsIndependent = noClasses()
             .that().resideInAPackage("..common..")
             .should().dependOnClassesThat().resideInAnyPackage(
-                    "..application..", "..adapter..", "com.example.shop..configuration..");
+                    "..domain..", "..application..", "..adapter..", "com.example.shop..configuration..");
 
     @ArchTest
     static final ArchRule applicationDoesNotDependOnAdapters = noClasses()
@@ -794,12 +825,12 @@ Unit tests follow the `java-testing` skill: AssertJ assertions and BDD Mockito n
 Service test with a mocked outgoing port:
 
 ```java
-package com.example.shop.sales.order.application.domain.service;
+package com.example.shop.sales.order.application.service;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.then;
 
-import com.example.shop.sales.order.application.domain.model.Order;
+import com.example.shop.sales.order.domain.Order;
 import com.example.shop.sales.order.application.port.in.PlaceOrderCommand;
 import com.example.shop.sales.order.application.port.out.OrderStore;
 import java.util.List;

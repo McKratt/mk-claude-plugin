@@ -22,13 +22,13 @@ class ArchitectureRulesDetectViolationsTest {
     }
 
     @Test
-    void should_detect_a_violation_when_the_model_uses_spring() {
-        assertViolation(ArchitectureTest.modelIsFrameworkFreeAndSelfContained, VIOLATIONS);
+    void should_detect_a_violation_when_the_domain_uses_spring() {
+        assertViolation(ArchitectureTest.domainIsFrameworkFreeAndSelfContained, VIOLATIONS);
     }
 
     @Test
     void should_detect_a_violation_when_the_domain_uses_an_orm() {
-        assertViolation(ArchitectureTest.domainHasNoOrmOrJson, VIOLATIONS);
+        assertViolation(ArchitectureTest.domainAndApplicationHaveNoOrmOrJson, VIOLATIONS);
     }
 
     @Test
@@ -38,7 +38,7 @@ class ArchitectureRulesDetectViolationsTest {
 
     @Test
     void should_detect_a_violation_when_a_service_has_a_stereotype() {
-        assertViolation(ArchitectureTest.servicesUseSpringOnlyForTransactional, VIOLATIONS);
+        assertViolation(ArchitectureTest.applicationUsesSpringOnlyForCrossCuttingConcerns, VIOLATIONS);
     }
 
     @Test

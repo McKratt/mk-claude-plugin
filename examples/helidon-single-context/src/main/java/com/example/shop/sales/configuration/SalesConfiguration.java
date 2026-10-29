@@ -3,7 +3,7 @@ package com.example.shop.sales.configuration;
 import com.example.shop.sales.adapter.in.web.SalesWebAdapterConfiguration;
 import com.example.shop.sales.adapter.out.persistence.SalesPersistenceAdapterConfiguration;
 import com.example.shop.sales.adapter.out.shipping.SalesShippingRestAdapterConfiguration;
-import com.example.shop.sales.application.domain.service.PlaceOrderService;
+import com.example.shop.sales.application.service.PlaceOrderService;
 import io.helidon.config.Config;
 import io.helidon.webserver.http.HttpRules;
 import java.time.Clock;
