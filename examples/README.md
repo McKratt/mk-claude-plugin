@@ -4,10 +4,10 @@ Runnable Java 25 projects that follow the hexagonal skills of this plugin and ch
 
 | Project | Skill | Shows |
 | --- | --- | --- |
-| `single-context/` | `hexagonal-spring` | Spring Boot 4.1. Component `sales` with one bounded context: the context level is omitted from the packages. |
-| `multi-context/` | `hexagonal-spring` | Spring Boot 4.1. Component `sales` with contexts `order` and `billing`, joined by `BillingDomainAdapter` (rule 8 of `hexagonal-spring`). |
-| `helidon-single-context/` | `hexagonal-helidon` | Helidon SE 4.5 (LTS). The same `sales` use case, wired by hand without a container: DbClient + Flyway, WebClient, transactions through the `TransactionRunner` port. |
-| `helidon-multi-context/` | `hexagonal-helidon` | Helidon SE 4.5 (LTS). Contexts `order` and `billing` joined by `BillingDomainAdapter`, one schema per context, one transaction shared through `sales/common/persistence/DbTransactions` (`OrderToInvoiceIT` proves the rollback across contexts). |
+| `single-context/` | `hexagonal-spring` | Spring Boot 4.1. One bounded context (sales): the hexagon sits directly in `com.example.shop`. |
+| `multi-context/` | `hexagonal-spring` | Spring Boot 4.1. Contexts `order` and `billing` directly under `com.example.shop`, joined by `BillingDomainAdapter` (rule 8 of `hexagonal-spring`). |
+| `helidon-single-context/` | `hexagonal-helidon` | Helidon SE 4.5 (LTS). The same use case, one bounded context, wired by hand without a container: DbClient + Flyway, WebClient, transactions through the `TransactionRunner` port. |
+| `helidon-multi-context/` | `hexagonal-helidon` | Helidon SE 4.5 (LTS). Contexts `order` and `billing` directly under `com.example.shop`, joined by `BillingDomainAdapter`, one schema per context, one transaction shared through `common/persistence/DbTransactions` (`OrderToInvoiceIT` proves the rollback across contexts). |
 
 ## Run
 

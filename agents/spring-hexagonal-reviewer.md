@@ -47,21 +47,26 @@ You never modify files.
    methods in themselves rather than a `@RestControllerAdvice`.
    Domain objects are not used as JPA entities or JSON payloads unless the shortcut is documented.
 6. **Mapping.** Each boundary has an explicit mapping strategy. Undocumented shortcuts are findings.
-7. **Bounded contexts of the same component.** Each `<component>/<context>/` is its own hexagon. A context reaches
-   another context of the same component only through an outgoing port of its own, implemented by a
+7. **Bounded contexts of the application.** Each `<base>/<context>/` is its own hexagon. A context reaches
+   another context only through an outgoing port of its own, implemented by a
    `*DomainAdapter` in `adapter/out/<target-context>/` that uses the target's incoming port (the use case interface and its command)
    and nothing else of the target (no domain, services, outgoing ports or adapters). Anything else is a violation.
-   A component with a single bounded context omits the context level in its package names; that is not a finding.
-8. **Different components.** Components share no classes. A component reaches another only through the target's
-   public API (for example REST, or messaging), via an outgoing port and an adapter in `adapter/out/<target-component>/`.
-   Any import of another component's classes is a violation, unless the user documented an in-process API.
+   **Structure.** The base package is the application: one `common` package and one `configuration` package directly
+   under it, and either the hexagon itself (a single bounded context: `domain`, `application`, `adapter` directly in
+   the base package) or one package per bounded context directly under the base package. An intermediate grouping
+   package (a "component" level such as `<base>/sales/order`), a `common` or `configuration` package inside a context,
+   or a single context nested in its own package are findings.
+8. **Other applications.** Another application (another service, a third party) is reached only through its public
+   API (for example REST, or messaging), via an outgoing port and an adapter in `adapter/out/<target>/`. Any compile-time
+   dependency on another application's classes is a violation, unless the user documented an in-process API.
    Outgoing HTTP must use Spring's `RestClient` created from the injected `RestClient.Builder`: a use of
    `java.net.http.HttpClient`, `RestClient.builder()` / `RestClient.create()` or another raw HTTP client in application code is a violation.
-9. **Common.** `<component>/common` holds utilities usable anywhere in the component. It must not depend on `application`, `adapter`
-   or any `configuration` package, and it is not shared with other components.
-10. **Configuration.** General Spring Java config (`@Configuration` classes) lives in a `configuration` package directly under the
-   base package. Each hexagon wires its services with `@Bean` methods in its own `configuration` package. Nothing may depend on a
-   `@Configuration` class (the per-hexagon `configuration` packages and the per-adapter configuration classes).
+9. **Common.** `<base>/common` holds utilities usable anywhere in the application. It must not depend on `domain`,
+   `application`, `adapter` or `configuration`, and it is not shared with other applications.
+10. **Configuration.** The single `<base>/configuration` package holds one file per bounded context
+   (`<Context>Configuration`, with the `@Bean` methods of its application services) and the general Spring Java config
+   (`Clock`, security, web...). Adapters are created by the `*AdapterConfiguration` class of their own adapter package.
+   Nothing may depend on a `@Configuration` class.
 11. **Tests** (see the `java-testing` skill of this plugin). Use cases are covered by `@SpringBootTest` tests named `*IT`
    that run in the integration-test phase (`maven-failsafe-plugin`), with a real database in a container (Testcontainers)
    and third-party services mocked by WireMock. An embedded database (H2 or similar) in place of the production engine,

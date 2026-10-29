@@ -1,9 +1,10 @@
 # Templates: one vertical slice (Helidon SE 4.x)
 
-Example slice: place an order. Base package `com.example.shop`, component `sales` with a **single** bounded context,
-so the context level is omitted from the packages (`com.example.shop.sales.application...`). With several contexts,
-insert it: `com.example.shop.sales.order.application...`. Utilities usable anywhere in the component go in
-`com.example.shop.sales.common`. Replace names to fit the user's domain.
+Example slice: place an order. Base package `com.example.shop` with a **single** bounded context (the sales domain),
+so the hexagon sits directly in the base package (`com.example.shop.domain`, `com.example.shop.application...`).
+With several contexts, each gets its package directly under the base package: `com.example.shop.order.application...`.
+There is one `com.example.shop.common` and one `com.example.shop.configuration` in both cases.
+Replace names to fit the user's domain.
 
 Every Java file below is copied from `examples/helidon-single-context/` or, for the section on joining bounded
 contexts, `examples/helidon-multi-context/` of this plugin's repository, which CI builds and tests (`mvn verify`,
@@ -34,7 +35,7 @@ ArchUnit, AssertJ, Mockito and WireMock are not managed by the Helidon BOM: look
   <artifactId>shop-helidon-single-context</artifactId>
   <version>0.0.1-SNAPSHOT</version>
   <name>shop-helidon-single-context</name>
-  <description>Example: Helidon SE, one component with a single bounded context (no context level in packages)</description>
+  <description>Example: Helidon SE, a single bounded context: the hexagon sits directly in the base package</description>
 
   <properties>
     <mainClass>com.example.shop.ShopApplication</mainClass>
@@ -299,20 +300,20 @@ Mark the domain and port packages (`domain`, `application/service`, `application
 `application/port/out`) as `@NullMarked`:
 
 ```java
-// sales/domain/package-info.java
+// domain/package-info.java
 @NullMarked
-package com.example.shop.sales.domain;
+package com.example.shop.domain;
 
 import org.jspecify.annotations.NullMarked;
 ```
 
-## Common (`sales/common`)
+## Common (`common`)
 
 ```java
-// sales/common/Preconditions.java
-package com.example.shop.sales.common;
+// common/Preconditions.java
+package com.example.shop.common;
 
-/** Utilities usable anywhere in the sales component. */
+/** Utilities usable anywhere in the application (all bounded contexts and layers). */
 public final class Preconditions {
 
     private Preconditions() {
@@ -342,15 +343,15 @@ public final class Preconditions {
 }
 ```
 
-## Domain (`sales/domain`)
+## Domain (`domain`)
 
 Plain Java: Lombok and JSpecify only.
 
 ```java
-// sales/domain/Order.java
-package com.example.shop.sales.domain;
+// domain/Order.java
+package com.example.shop.domain;
 
-import com.example.shop.sales.common.Preconditions;
+import com.example.shop.common.Preconditions;
 import java.time.Instant;
 import java.util.List;
 import lombok.AccessLevel;
@@ -396,10 +397,10 @@ public final class Order {
 ```
 
 ```java
-// sales/domain/OrderId.java
-package com.example.shop.sales.domain;
+// domain/OrderId.java
+package com.example.shop.domain;
 
-import com.example.shop.sales.common.Preconditions;
+import com.example.shop.common.Preconditions;
 import java.util.UUID;
 
 public record OrderId(UUID value) {
@@ -414,7 +415,7 @@ public record OrderId(UUID value) {
 }
 ```
 
-## Domain service (optional, `sales/domain/service`): *not in the examples*
+## Domain service (optional, `domain/service`): *not in the examples*
 
 Only when a domain operation does not belong to a single entity or value object, typically when it needs several
 aggregates. Plain Java, stateless, named after the operation, no transaction, security or port: the application
@@ -422,11 +423,11 @@ service loads the aggregates through its ports, calls the domain service and sav
 stands for a second aggregate of the context.
 
 ```java
-// sales/domain/service/LoyaltyDiscount.java
-package com.example.shop.sales.domain.service;
+// domain/service/LoyaltyDiscount.java
+package com.example.shop.domain.service;
 
-import com.example.shop.sales.domain.Customer;
-import com.example.shop.sales.domain.Order;
+import com.example.shop.domain.Customer;
+import com.example.shop.domain.Order;
 
 /** Discount rule that needs two aggregates, so it belongs to neither. */
 public final class LoyaltyDiscount {
@@ -438,13 +439,13 @@ public final class LoyaltyDiscount {
 }
 ```
 
-## Incoming port and command (`sales/application/port/in`)
+## Incoming port and command (`application/port/in`)
 
 ```java
-// sales/application/port/in/OrderPlacement.java
-package com.example.shop.sales.application.port.in;
+// application/port/in/OrderPlacement.java
+package com.example.shop.application.port.in;
 
-import com.example.shop.sales.domain.OrderId;
+import com.example.shop.domain.OrderId;
 
 public interface OrderPlacement {
 
@@ -453,10 +454,10 @@ public interface OrderPlacement {
 ```
 
 ```java
-// sales/application/port/in/PlaceOrderCommand.java
-package com.example.shop.sales.application.port.in;
+// application/port/in/PlaceOrderCommand.java
+package com.example.shop.application.port.in;
 
-import com.example.shop.sales.common.Preconditions;
+import com.example.shop.common.Preconditions;
 import java.util.List;
 
 /** Input model of exactly one use case. It validates itself on construction. */
@@ -477,15 +478,15 @@ public record PlaceOrderCommand(List<Line> lines) {
 }
 ```
 
-## Outgoing ports (`sales/application/port/out`)
+## Outgoing ports (`application/port/out`)
 
 `TransactionRunner` replaces Spring's `@Transactional`: the service declares its transaction boundary through it.
 
 ```java
-// sales/application/port/out/OrderStore.java
-package com.example.shop.sales.application.port.out;
+// application/port/out/OrderStore.java
+package com.example.shop.application.port.out;
 
-import com.example.shop.sales.domain.Order;
+import com.example.shop.domain.Order;
 
 public interface OrderStore {
 
@@ -494,10 +495,10 @@ public interface OrderStore {
 ```
 
 ```java
-// sales/application/port/out/ShipmentRequester.java
-package com.example.shop.sales.application.port.out;
+// application/port/out/ShipmentRequester.java
+package com.example.shop.application.port.out;
 
-import com.example.shop.sales.domain.Order;
+import com.example.shop.domain.Order;
 
 /** Third-party service: asks the shipping company to deliver an order. */
 public interface ShipmentRequester {
@@ -507,8 +508,8 @@ public interface ShipmentRequester {
 ```
 
 ```java
-// sales/application/port/out/TransactionRunner.java
-package com.example.shop.sales.application.port.out;
+// application/port/out/TransactionRunner.java
+package com.example.shop.application.port.out;
 
 import java.util.function.Supplier;
 
@@ -523,23 +524,23 @@ public interface TransactionRunner {
 }
 ```
 
-## Application service (`sales/application/service`)
+## Application service (`application/service`)
 
 ```java
-// sales/application/service/PlaceOrderService.java
-package com.example.shop.sales.application.service;
+// application/service/PlaceOrderService.java
+package com.example.shop.application.service;
 
-import com.example.shop.sales.domain.Order;
-import com.example.shop.sales.domain.OrderId;
-import com.example.shop.sales.application.port.in.OrderPlacement;
-import com.example.shop.sales.application.port.in.PlaceOrderCommand;
-import com.example.shop.sales.application.port.out.OrderStore;
-import com.example.shop.sales.application.port.out.ShipmentRequester;
-import com.example.shop.sales.application.port.out.TransactionRunner;
+import com.example.shop.domain.Order;
+import com.example.shop.domain.OrderId;
+import com.example.shop.application.port.in.OrderPlacement;
+import com.example.shop.application.port.in.PlaceOrderCommand;
+import com.example.shop.application.port.out.OrderStore;
+import com.example.shop.application.port.out.ShipmentRequester;
+import com.example.shop.application.port.out.TransactionRunner;
 import java.time.Clock;
 import lombok.RequiredArgsConstructor;
 
-// Application service: plain Java, no Helidon type, no annotation. It is created by the hexagon's configuration
+// Application service: plain Java, no Helidon type, no annotation. It is created by the domain's configuration
 // class, runs the use case and owns its cross-cutting concerns:
 // the transaction boundary, through the TransactionRunner port.
 @RequiredArgsConstructor
@@ -565,17 +566,17 @@ public class PlaceOrderService implements OrderPlacement {
 }
 ```
 
-## Web adapter (`sales/adapter/in/web`)
+## Web adapter (`adapter/in/web`)
 
 A `*Controller` implements Helidon's `HttpService`. JSON goes through `helidon-http-media-jackson`, discovered from
 the classpath. The package exposes only its `*AdapterConfiguration`.
 
 ```java
-// sales/adapter/in/web/PlaceOrderController.java
-package com.example.shop.sales.adapter.in.web;
+// adapter/in/web/PlaceOrderController.java
+package com.example.shop.adapter.in.web;
 
-import com.example.shop.sales.application.port.in.OrderPlacement;
-import com.example.shop.sales.application.port.in.PlaceOrderCommand;
+import com.example.shop.application.port.in.OrderPlacement;
+import com.example.shop.application.port.in.PlaceOrderCommand;
 import io.helidon.http.Status;
 import io.helidon.webserver.http.HttpRules;
 import io.helidon.webserver.http.HttpService;
@@ -627,10 +628,10 @@ class PlaceOrderController implements HttpService {
 ```
 
 ```java
-// sales/adapter/in/web/SalesWebAdapterConfiguration.java
-package com.example.shop.sales.adapter.in.web;
+// adapter/in/web/SalesWebAdapterConfiguration.java
+package com.example.shop.adapter.in.web;
 
-import com.example.shop.sales.application.port.in.OrderPlacement;
+import com.example.shop.application.port.in.OrderPlacement;
 import io.helidon.webserver.http.HttpRules;
 
 public final class SalesWebAdapterConfiguration {
@@ -638,24 +639,24 @@ public final class SalesWebAdapterConfiguration {
     private SalesWebAdapterConfiguration() {
     }
 
-    /** Registers the web adapters of the hexagon; they depend on incoming ports only. */
+    /** Registers the web adapters of the domain; they depend on incoming ports only. */
     public static void routing(HttpRules rules, OrderPlacement orderPlacement) {
         rules.register("/orders", new PlaceOrderController(orderPlacement));
     }
 }
 ```
 
-## Persistence adapter (`sales/adapter/out/persistence`)
+## Persistence adapter (`adapter/out/persistence`)
 
 DbClient (JDBC + Hikari). `DbClientTransactionRunner` implements the `TransactionRunner` port and binds the open
 `DbTransaction` to the current thread; the persistence adapters of the package run their statements on
 `executor()`. Note the `CAST(? AS UUID)`: DbClient binds a `UUID` as a string.
 
 ```java
-// sales/adapter/out/persistence/DbClientTransactionRunner.java
-package com.example.shop.sales.adapter.out.persistence;
+// adapter/out/persistence/DbClientTransactionRunner.java
+package com.example.shop.adapter.out.persistence;
 
-import com.example.shop.sales.application.port.out.TransactionRunner;
+import com.example.shop.application.port.out.TransactionRunner;
 import io.helidon.dbclient.DbClient;
 import io.helidon.dbclient.DbExecute;
 import io.helidon.dbclient.DbTransaction;
@@ -706,11 +707,11 @@ class DbClientTransactionRunner implements TransactionRunner {
 ```
 
 ```java
-// sales/adapter/out/persistence/OrderPersistenceAdapter.java
-package com.example.shop.sales.adapter.out.persistence;
+// adapter/out/persistence/OrderPersistenceAdapter.java
+package com.example.shop.adapter.out.persistence;
 
-import com.example.shop.sales.domain.Order;
-import com.example.shop.sales.application.port.out.OrderStore;
+import com.example.shop.domain.Order;
+import com.example.shop.application.port.out.OrderStore;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import lombok.RequiredArgsConstructor;
@@ -739,18 +740,18 @@ class OrderPersistenceAdapter implements OrderStore {
 ```
 
 ```java
-// sales/adapter/out/persistence/SalesPersistenceAdapterConfiguration.java
-package com.example.shop.sales.adapter.out.persistence;
+// adapter/out/persistence/SalesPersistenceAdapterConfiguration.java
+package com.example.shop.adapter.out.persistence;
 
-import com.example.shop.sales.application.port.out.OrderStore;
-import com.example.shop.sales.application.port.out.TransactionRunner;
+import com.example.shop.application.port.out.OrderStore;
+import com.example.shop.application.port.out.TransactionRunner;
 import io.helidon.config.Config;
 import io.helidon.dbclient.DbClient;
 import org.flywaydb.core.Flyway;
 
 /**
  * The only public class of the package: it creates the persistence adapters, which stay package-private,
- * and hands them out as ports. Used only by the hexagon's configuration class.
+ * and hands them out as ports. Used only by the domain's configuration class.
  */
 public final class SalesPersistenceAdapterConfiguration {
 
@@ -784,16 +785,16 @@ public final class SalesPersistenceAdapterConfiguration {
 }
 ```
 
-## Calling another component through its public API (`sales/adapter/out/shipping`)
+## Calling another application through its public API (`adapter/out/shipping`)
 
 Helidon `WebClient`, configured from the `shipping` config node. It does not throw on an error status.
 
 ```java
-// sales/adapter/out/shipping/ShippingRestAdapter.java
-package com.example.shop.sales.adapter.out.shipping;
+// adapter/out/shipping/ShippingRestAdapter.java
+package com.example.shop.adapter.out.shipping;
 
-import com.example.shop.sales.domain.Order;
-import com.example.shop.sales.application.port.out.ShipmentRequester;
+import com.example.shop.domain.Order;
+import com.example.shop.application.port.out.ShipmentRequester;
 import io.helidon.http.Status;
 import io.helidon.webclient.api.WebClient;
 import java.util.UUID;
@@ -823,10 +824,10 @@ class ShippingRestAdapter implements ShipmentRequester {
 ```
 
 ```java
-// sales/adapter/out/shipping/SalesShippingRestAdapterConfiguration.java
-package com.example.shop.sales.adapter.out.shipping;
+// adapter/out/shipping/SalesShippingRestAdapterConfiguration.java
+package com.example.shop.adapter.out.shipping;
 
-import com.example.shop.sales.application.port.out.ShipmentRequester;
+import com.example.shop.application.port.out.ShipmentRequester;
 import io.helidon.config.Config;
 import io.helidon.webclient.api.WebClient;
 
@@ -847,21 +848,21 @@ public final class SalesShippingRestAdapterConfiguration {
 }
 ```
 
-## Wiring of the hexagon (`sales/configuration`)
+## Wiring of the hexagon (`configuration`)
 
 ```java
-// sales/configuration/SalesConfiguration.java
-package com.example.shop.sales.configuration;
+// configuration/SalesConfiguration.java
+package com.example.shop.configuration;
 
-import com.example.shop.sales.adapter.in.web.SalesWebAdapterConfiguration;
-import com.example.shop.sales.adapter.out.persistence.SalesPersistenceAdapterConfiguration;
-import com.example.shop.sales.adapter.out.shipping.SalesShippingRestAdapterConfiguration;
-import com.example.shop.sales.application.service.PlaceOrderService;
+import com.example.shop.adapter.in.web.SalesWebAdapterConfiguration;
+import com.example.shop.adapter.out.persistence.SalesPersistenceAdapterConfiguration;
+import com.example.shop.adapter.out.shipping.SalesShippingRestAdapterConfiguration;
+import com.example.shop.application.service.PlaceOrderService;
 import io.helidon.config.Config;
 import io.helidon.webserver.http.HttpRules;
 import java.time.Clock;
 
-/** Wiring of the sales hexagon: outgoing adapters, then services, then incoming adapters. No container. */
+/** Wiring of the sales domain: outgoing adapters, then services, then incoming adapters. No container. */
 public final class SalesConfiguration {
 
     private SalesConfiguration() {
@@ -885,12 +886,11 @@ public final class SalesConfiguration {
 // configuration/ShopConfiguration.java
 package com.example.shop.configuration;
 
-import com.example.shop.sales.configuration.SalesConfiguration;
 import io.helidon.config.Config;
 import io.helidon.webserver.http.HttpRouting;
 import java.time.Clock;
 
-/** Application-wide assembly: shared objects, then one call per component. Used by main and by the *IT tests. */
+/** Application-wide assembly: shared objects, then the configuration of the domain. Used by main and by the *IT tests. */
 public final class ShopConfiguration {
 
     private ShopConfiguration() {
@@ -931,20 +931,20 @@ public final class ShopApplication {
 }
 ```
 
-## Joining two bounded contexts of the same component (`DomainAdapter`)
+## Joining two bounded contexts of the application (`DomainAdapter`)
 
-From `examples/helidon-multi-context/`: component `sales` with contexts `order` and `billing`. When an order is placed,
-`order` asks `billing` to create the invoice, in the same transaction. The packages gain the context level
-(`com.example.shop.sales.order...`, `com.example.shop.sales.billing...`); domain, commands and ports are written as in
-the slice above.
+From `examples/helidon-multi-context/`: contexts `order` and `billing`, directly under the base package
+(`com.example.shop.order...`, `com.example.shop.billing...`), with one `common` and one `configuration` package
+holding one file per context. When an order is placed, `order` asks `billing` to create the invoice, in the same
+transaction. Domain, commands and ports are written as in the slice above.
 
 `order` defines its own outgoing port; the adapter calls `billing`'s incoming port and nothing else of it:
 
 ```java
-// sales/order/application/port/out/InvoiceIssuer.java
-package com.example.shop.sales.order.application.port.out;
+// order/application/port/out/InvoiceIssuer.java
+package com.example.shop.order.application.port.out;
 
-import com.example.shop.sales.order.domain.Order;
+import com.example.shop.order.domain.Order;
 
 public interface InvoiceIssuer {
 
@@ -953,17 +953,17 @@ public interface InvoiceIssuer {
 ```
 
 ```java
-// sales/order/adapter/out/billing/BillingDomainAdapter.java
-package com.example.shop.sales.order.adapter.out.billing;
+// order/adapter/out/billing/BillingDomainAdapter.java
+package com.example.shop.order.adapter.out.billing;
 
-import com.example.shop.sales.billing.application.port.in.CreateInvoiceCommand;
-import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
-import com.example.shop.sales.order.domain.Order;
-import com.example.shop.sales.order.application.port.out.InvoiceIssuer;
+import com.example.shop.billing.application.port.in.CreateInvoiceCommand;
+import com.example.shop.billing.application.port.in.InvoiceCreation;
+import com.example.shop.order.domain.Order;
+import com.example.shop.order.application.port.out.InvoiceIssuer;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Joins the order context to the billing context of the same component: it implements order's outgoing
+ * Joins the order context to the billing context of the same application: it implements order's outgoing
  * port and calls billing's incoming port directly, converting order types into billing's command.
  */
 @RequiredArgsConstructor
@@ -980,11 +980,11 @@ class BillingDomainAdapter implements InvoiceIssuer {
 ```
 
 ```java
-// sales/order/adapter/out/billing/OrderBillingDomainAdapterConfiguration.java
-package com.example.shop.sales.order.adapter.out.billing;
+// order/adapter/out/billing/OrderBillingDomainAdapterConfiguration.java
+package com.example.shop.order.adapter.out.billing;
 
-import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
-import com.example.shop.sales.order.application.port.out.InvoiceIssuer;
+import com.example.shop.billing.application.port.in.InvoiceCreation;
+import com.example.shop.order.application.port.out.InvoiceIssuer;
 
 public final class OrderBillingDomainAdapterConfiguration {
 
@@ -998,15 +998,15 @@ public final class OrderBillingDomainAdapterConfiguration {
 }
 ```
 
-### One transaction across contexts (`sales/common/persistence`)
+### One transaction across contexts (`common/persistence`)
 
-The thread-bound transaction moves from the persistence adapter to the component's `common/persistence`, so that
+The thread-bound transaction moves from the persistence adapter to the application's `common/persistence`, so that
 billing's `CreateInvoiceService` joins the transaction opened by order's `PlaceOrderService`. Each context keeps its
 own `TransactionRunner` port (same code as in the slice) and a thin adapter:
 
 ```java
-// sales/common/persistence/DbTransactions.java
-package com.example.shop.sales.common.persistence;
+// common/persistence/DbTransactions.java
+package com.example.shop.common.persistence;
 
 import io.helidon.config.Config;
 import io.helidon.dbclient.DbClient;
@@ -1015,7 +1015,7 @@ import io.helidon.dbclient.DbTransaction;
 import java.util.function.Supplier;
 
 /**
- * One DbClient for the whole component, with the open transaction bound to the current thread (Helidon serves
+ * One DbClient for the whole application, with the open transaction bound to the current thread (Helidon serves
  * each request on its own virtual thread). The persistence adapters of every bounded context run their
  * statements on {@link #executor()}, so a use case of one context that calls another context through a
  * DomainAdapter keeps a single transaction. Only persistence adapters and configuration classes may use it.
@@ -1068,15 +1068,15 @@ public final class DbTransactions {
 ```
 
 ```java
-// sales/billing/adapter/out/persistence/DbClientTransactionRunner.java
-package com.example.shop.sales.billing.adapter.out.persistence;
+// billing/adapter/out/persistence/DbClientTransactionRunner.java
+package com.example.shop.billing.adapter.out.persistence;
 
-import com.example.shop.sales.common.persistence.DbTransactions;
-import com.example.shop.sales.billing.application.port.out.TransactionRunner;
+import com.example.shop.common.persistence.DbTransactions;
+import com.example.shop.billing.application.port.out.TransactionRunner;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 
-/** The billing context's transaction port, backed by the component's shared {@link DbTransactions}. */
+/** The billing context's transaction port, backed by the application's shared {@link DbTransactions}. */
 @RequiredArgsConstructor
 class DbClientTransactionRunner implements TransactionRunner {
 
@@ -1090,14 +1090,14 @@ class DbClientTransactionRunner implements TransactionRunner {
 ```
 
 ```java
-// sales/billing/application/service/CreateInvoiceService.java
-package com.example.shop.sales.billing.application.service;
+// billing/application/service/CreateInvoiceService.java
+package com.example.shop.billing.application.service;
 
-import com.example.shop.sales.billing.domain.Invoice;
-import com.example.shop.sales.billing.application.port.in.CreateInvoiceCommand;
-import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
-import com.example.shop.sales.billing.application.port.out.InvoiceStore;
-import com.example.shop.sales.billing.application.port.out.TransactionRunner;
+import com.example.shop.billing.domain.Invoice;
+import com.example.shop.billing.application.port.in.CreateInvoiceCommand;
+import com.example.shop.billing.application.port.in.InvoiceCreation;
+import com.example.shop.billing.application.port.out.InvoiceStore;
+import com.example.shop.billing.application.port.out.TransactionRunner;
 import java.time.Clock;
 import lombok.RequiredArgsConstructor;
 
@@ -1124,13 +1124,13 @@ Each context migrates its own schema with its own Flyway history; the SQL names 
 crosses contexts. Reading a row: `UUID` and `TIMESTAMP WITH TIME ZONE` are read as `String` and `java.sql.Timestamp`.
 
 ```java
-// sales/billing/adapter/out/persistence/BillingPersistenceAdapterConfiguration.java
-package com.example.shop.sales.billing.adapter.out.persistence;
+// billing/adapter/out/persistence/BillingPersistenceAdapterConfiguration.java
+package com.example.shop.billing.adapter.out.persistence;
 
-import com.example.shop.sales.billing.application.port.out.InvoiceFinder;
-import com.example.shop.sales.billing.application.port.out.InvoiceStore;
-import com.example.shop.sales.billing.application.port.out.TransactionRunner;
-import com.example.shop.sales.common.persistence.DbTransactions;
+import com.example.shop.billing.application.port.out.InvoiceFinder;
+import com.example.shop.billing.application.port.out.InvoiceStore;
+import com.example.shop.billing.application.port.out.TransactionRunner;
+import com.example.shop.common.persistence.DbTransactions;
 import io.helidon.config.Config;
 import org.flywaydb.core.Flyway;
 
@@ -1145,7 +1145,7 @@ public final class BillingPersistenceAdapterConfiguration {
 
     /**
      * @param dbConfig       the {@code db} node of the configuration, for the schema migration
-     * @param dbTransactions the component's shared DbClient
+     * @param dbTransactions the application's shared DbClient
      */
     public BillingPersistenceAdapterConfiguration(Config dbConfig, DbTransactions dbTransactions) {
         migrate(dbConfig.get("connection"));
@@ -1180,13 +1180,13 @@ public final class BillingPersistenceAdapterConfiguration {
 ```
 
 ```java
-// sales/billing/adapter/out/persistence/InvoicePersistenceAdapter.java
-package com.example.shop.sales.billing.adapter.out.persistence;
+// billing/adapter/out/persistence/InvoicePersistenceAdapter.java
+package com.example.shop.billing.adapter.out.persistence;
 
-import com.example.shop.sales.billing.domain.Invoice;
-import com.example.shop.sales.billing.application.port.out.InvoiceFinder;
-import com.example.shop.sales.billing.application.port.out.InvoiceStore;
-import com.example.shop.sales.common.persistence.DbTransactions;
+import com.example.shop.billing.domain.Invoice;
+import com.example.shop.billing.application.port.out.InvoiceFinder;
+import com.example.shop.billing.application.port.out.InvoiceStore;
+import com.example.shop.common.persistence.DbTransactions;
 import io.helidon.dbclient.DbRow;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -1240,25 +1240,25 @@ CREATE TABLE invoices (
 
 ### Wiring: target context first
 
-Each context's configuration is an instance class; the component's configuration creates `billing` before `order`
-and hands billing's incoming port to order:
+Each context has its file in the `configuration` package, an instance class; `ShopConfiguration`, the
+application-wide assembly, creates `billing` before `order` and hands billing's incoming port to order:
 
 ```java
-// sales/billing/configuration/BillingConfiguration.java
-package com.example.shop.sales.billing.configuration;
+// configuration/BillingConfiguration.java
+package com.example.shop.configuration;
 
-import com.example.shop.sales.billing.adapter.in.web.BillingWebAdapterConfiguration;
-import com.example.shop.sales.billing.adapter.out.persistence.BillingPersistenceAdapterConfiguration;
-import com.example.shop.sales.billing.application.service.CreateInvoiceService;
-import com.example.shop.sales.billing.application.service.FindInvoiceByOrderService;
-import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
-import com.example.shop.sales.billing.application.port.in.InvoiceLookup;
-import com.example.shop.sales.common.persistence.DbTransactions;
+import com.example.shop.billing.adapter.in.web.BillingWebAdapterConfiguration;
+import com.example.shop.billing.adapter.out.persistence.BillingPersistenceAdapterConfiguration;
+import com.example.shop.billing.application.service.CreateInvoiceService;
+import com.example.shop.billing.application.service.FindInvoiceByOrderService;
+import com.example.shop.billing.application.port.in.InvoiceCreation;
+import com.example.shop.billing.application.port.in.InvoiceLookup;
+import com.example.shop.common.persistence.DbTransactions;
 import io.helidon.config.Config;
 import io.helidon.webserver.http.HttpRules;
 import java.time.Clock;
 
-/** Wiring of the billing hexagon. Its incoming port InvoiceCreation is handed to the order context. */
+/** Wiring of the billing bounded context. Its incoming port InvoiceCreation is handed to the order context. */
 public final class BillingConfiguration {
 
     private final InvoiceCreation invoiceCreation;
@@ -1281,21 +1281,21 @@ public final class BillingConfiguration {
 ```
 
 ```java
-// sales/order/configuration/OrderConfiguration.java
-package com.example.shop.sales.order.configuration;
+// configuration/OrderConfiguration.java
+package com.example.shop.configuration;
 
-import com.example.shop.sales.billing.application.port.in.InvoiceCreation;
-import com.example.shop.sales.common.persistence.DbTransactions;
-import com.example.shop.sales.order.adapter.in.web.OrderWebAdapterConfiguration;
-import com.example.shop.sales.order.adapter.out.billing.OrderBillingDomainAdapterConfiguration;
-import com.example.shop.sales.order.adapter.out.persistence.OrderPersistenceAdapterConfiguration;
-import com.example.shop.sales.order.application.service.PlaceOrderService;
-import com.example.shop.sales.order.application.port.in.OrderPlacement;
+import com.example.shop.billing.application.port.in.InvoiceCreation;
+import com.example.shop.common.persistence.DbTransactions;
+import com.example.shop.order.adapter.in.web.OrderWebAdapterConfiguration;
+import com.example.shop.order.adapter.out.billing.OrderBillingDomainAdapterConfiguration;
+import com.example.shop.order.adapter.out.persistence.OrderPersistenceAdapterConfiguration;
+import com.example.shop.order.application.service.PlaceOrderService;
+import com.example.shop.order.application.port.in.OrderPlacement;
 import io.helidon.config.Config;
 import io.helidon.webserver.http.HttpRules;
 import java.time.Clock;
 
-/** Wiring of the order hexagon. Billing is reached through billing's incoming port, given by the component. */
+/** Wiring of the order bounded context. Billing is reached through billing's incoming port, given by ShopConfiguration. */
 public final class OrderConfiguration {
 
     private final OrderPlacement orderPlacement;
@@ -1315,34 +1315,34 @@ public final class OrderConfiguration {
 ```
 
 ```java
-// sales/configuration/SalesConfiguration.java
-package com.example.shop.sales.configuration;
+// configuration/ShopConfiguration.java
+package com.example.shop.configuration;
 
-import com.example.shop.sales.billing.configuration.BillingConfiguration;
-import com.example.shop.sales.common.persistence.DbTransactions;
-import com.example.shop.sales.order.configuration.OrderConfiguration;
+import com.example.shop.common.persistence.DbTransactions;
 import io.helidon.config.Config;
-import io.helidon.webserver.http.HttpRules;
+import io.helidon.webserver.http.HttpRouting;
 import java.time.Clock;
 
 /**
- * Wiring of the sales component: one shared DbClient, then the target context (billing) before the context
- * that calls it (order), which receives billing's incoming port.
+ * Application-wide assembly, used by main and by the *IT tests: shared objects (Clock, one DbClient), then one
+ * configuration per bounded context, the target context (billing) before the context that calls it (order),
+ * which receives billing's incoming port.
  */
-public final class SalesConfiguration {
+public final class ShopConfiguration {
 
-    private SalesConfiguration() {
+    private ShopConfiguration() {
     }
 
-    public static void routing(HttpRules rules, Config config, Clock clock) {
+    public static void routing(HttpRouting.Builder routing, Config config) {
+        var clock = Clock.systemUTC();
         var dbConfig = config.get("db");
         var dbTransactions = DbTransactions.create(dbConfig);
 
         var billing = new BillingConfiguration(dbConfig, dbTransactions, clock);
         var order = new OrderConfiguration(dbConfig, dbTransactions, clock, billing.invoiceCreation());
 
-        billing.routing(rules);
-        order.routing(rules);
+        billing.routing(routing);
+        order.routing(routing);
     }
 }
 ```
@@ -1351,37 +1351,36 @@ public final class SalesConfiguration {
 
 Added to the `ArchitectureTest` below (with `import static com.tngtech.archunit.base.DescribedPredicate.not;` and
 `import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;`), each with a fixture in
-`ArchitectureRulesDetectViolationsTest` (for example `com.example.shop.sales.order.fixture.ReachesIntoBilling`, a test
+`ArchitectureRulesDetectViolationsTest` (for example `com.example.shop.order.fixture.ReachesIntoBilling`, a test
 class of order holding a billing domain object):
 
 ```java
-    // The component's shared DbClient (common.persistence) is technology: only persistence adapters and
+    // The application's shared DbClient (common.persistence) is technology: only persistence adapters and
     // configuration classes may use it, never the application.
     @ArchTest
     static final ArchRule sharedPersistenceIsUsedOnlyByPersistenceAdapters = noClasses()
             .that().resideOutsideOfPackages("..adapter.out.persistence..", "..configuration..", "..common.persistence..")
             .should().dependOnClassesThat().resideInAPackage("..common.persistence..");
 
-    // Bounded contexts of the same component: order -> billing only through the DomainAdapter (and the
-    // configuration, which wires it), and only through billing's incoming ports.
+    // Bounded contexts of the same application: order -> billing only through the DomainAdapter, and only
+    // through billing's incoming ports. The configuration package, outside both contexts, wires them.
     @ArchTest
     static final ArchRule orderReachesBillingOnlyThroughItsDomainAdapter = noClasses()
-            .that().resideInAPackage("com.example.shop.sales.order..")
-            .and().resideOutsideOfPackages("com.example.shop.sales.order.adapter.out.billing..",
-                    "com.example.shop.sales.order.configuration..")
-            .should().dependOnClassesThat().resideInAPackage("com.example.shop.sales.billing..");
+            .that().resideInAPackage("com.example.shop.order..")
+            .and().resideOutsideOfPackage("com.example.shop.order.adapter.out.billing..")
+            .should().dependOnClassesThat().resideInAPackage("com.example.shop.billing..");
 
     @ArchTest
     static final ArchRule orderUsesOnlyBillingIncomingPorts = classes()
-            .that().resideInAPackage("com.example.shop.sales.order..")
+            .that().resideInAPackage("com.example.shop.order..")
             .should().onlyDependOnClassesThat(
-                    not(resideInAPackage("com.example.shop.sales.billing.."))
-                            .or(resideInAPackage("com.example.shop.sales.billing.application.port.in..")));
+                    not(resideInAPackage("com.example.shop.billing.."))
+                            .or(resideInAPackage("com.example.shop.billing.application.port.in..")));
 
     @ArchTest
     static final ArchRule billingDoesNotUseOrder = noClasses()
-            .that().resideInAPackage("com.example.shop.sales.billing..")
-            .should().dependOnClassesThat().resideInAPackage("com.example.shop.sales.order..");
+            .that().resideInAPackage("com.example.shop.billing..")
+            .should().dependOnClassesThat().resideInAPackage("com.example.shop.order..");
 
 ```
 
@@ -1776,19 +1775,19 @@ Domain and command tests are plain JUnit + AssertJ. A service test mocks the out
 the work without a transaction:
 
 ```java
-// src/test/java/com/example/shop/sales/application/service/PlaceOrderServiceTest.java
-package com.example.shop.sales.application.service;
+// src/test/java/com/example/shop/application/service/PlaceOrderServiceTest.java
+package com.example.shop.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.mock;
 import static org.mockito.BDDMockito.then;
 
-import com.example.shop.sales.domain.Order;
-import com.example.shop.sales.application.port.in.PlaceOrderCommand;
-import com.example.shop.sales.application.port.out.OrderStore;
-import com.example.shop.sales.application.port.out.ShipmentRequester;
-import com.example.shop.sales.application.port.out.TransactionRunner;
+import com.example.shop.domain.Order;
+import com.example.shop.application.port.in.PlaceOrderCommand;
+import com.example.shop.application.port.out.OrderStore;
+import com.example.shop.application.port.out.ShipmentRequester;
+import com.example.shop.application.port.out.TransactionRunner;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;

@@ -15,7 +15,7 @@
   <artifactId>shop-single-context</artifactId>
   <version>0.0.1-SNAPSHOT</version>
   <name>shop-single-context</name>
-  <description>Example: one component with a single bounded context (no context level in packages)</description>
+  <description>Example: a single bounded context: the hexagon sits directly in the base package</description>
 
   <properties>
     <java.version>25</java.version>

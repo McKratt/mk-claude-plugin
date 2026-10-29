@@ -83,33 +83,32 @@ class ArchitectureTest {
             .and().haveSimpleNameNotEndingWith("AdapterConfiguration")
             .should().notBePublic();
 
-    // The component's shared DbClient (common.persistence) is technology: only persistence adapters and
+    // The application's shared DbClient (common.persistence) is technology: only persistence adapters and
     // configuration classes may use it, never the application.
     @ArchTest
     static final ArchRule sharedPersistenceIsUsedOnlyByPersistenceAdapters = noClasses()
             .that().resideOutsideOfPackages("..adapter.out.persistence..", "..configuration..", "..common.persistence..")
             .should().dependOnClassesThat().resideInAPackage("..common.persistence..");
 
-    // Bounded contexts of the same component: order -> billing only through the DomainAdapter (and the
-    // configuration, which wires it), and only through billing's incoming ports.
+    // Bounded contexts of the same application: order -> billing only through the DomainAdapter, and only
+    // through billing's incoming ports. The configuration package, outside both contexts, wires them.
     @ArchTest
     static final ArchRule orderReachesBillingOnlyThroughItsDomainAdapter = noClasses()
-            .that().resideInAPackage("com.example.shop.sales.order..")
-            .and().resideOutsideOfPackages("com.example.shop.sales.order.adapter.out.billing..",
-                    "com.example.shop.sales.order.configuration..")
-            .should().dependOnClassesThat().resideInAPackage("com.example.shop.sales.billing..");
+            .that().resideInAPackage("com.example.shop.order..")
+            .and().resideOutsideOfPackage("com.example.shop.order.adapter.out.billing..")
+            .should().dependOnClassesThat().resideInAPackage("com.example.shop.billing..");
 
     @ArchTest
     static final ArchRule orderUsesOnlyBillingIncomingPorts = classes()
-            .that().resideInAPackage("com.example.shop.sales.order..")
+            .that().resideInAPackage("com.example.shop.order..")
             .should().onlyDependOnClassesThat(
-                    not(resideInAPackage("com.example.shop.sales.billing.."))
-                            .or(resideInAPackage("com.example.shop.sales.billing.application.port.in..")));
+                    not(resideInAPackage("com.example.shop.billing.."))
+                            .or(resideInAPackage("com.example.shop.billing.application.port.in..")));
 
     @ArchTest
     static final ArchRule billingDoesNotUseOrder = noClasses()
-            .that().resideInAPackage("com.example.shop.sales.billing..")
-            .should().dependOnClassesThat().resideInAPackage("com.example.shop.sales.order..");
+            .that().resideInAPackage("com.example.shop.billing..")
+            .should().dependOnClassesThat().resideInAPackage("com.example.shop.order..");
 
     // Outgoing HTTP goes through Helidon's WebClient, never through a raw HTTP client.
     @ArchTest

@@ -16,7 +16,7 @@
   <artifactId>shop-helidon-single-context</artifactId>
   <version>0.0.1-SNAPSHOT</version>
   <name>shop-helidon-single-context</name>
-  <description>Example: Helidon SE, one component with a single bounded context (no context level in packages)</description>
+  <description>Example: Helidon SE, a single bounded context: the hexagon sits directly in the base package</description>
 
   <properties>
     <mainClass>com.example.shop.ShopApplication</mainClass>
