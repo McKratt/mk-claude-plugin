@@ -1,6 +1,6 @@
 # Examples
 
-Runnable Java 25 projects that follow the hexagonal skills of this plugin and check them with ArchUnit.
+Runnable Java 25 projects that follow the hexagonal skills of the `mk-spring` and `mk-helidon` plugins and check them with ArchUnit.
 
 | Project | Skill | Shows |
 | --- | --- | --- |

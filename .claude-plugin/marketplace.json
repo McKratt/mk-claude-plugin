@@ -6,9 +6,19 @@
   },
   "plugins": [
     {
-      "name": "mk-claude-plugin",
-      "source": "./",
-      "description": "Skills and agents for Java projects (Spring Boot, Helidon SE)"
+      "name": "mk-java",
+      "source": "./plugins/mk-java",
+      "description": "Java skills shared by the McKratt plugins: testing rules (use case tests first, Testcontainers, WireMock, failsafe, AssertJ, BDD Mockito)"
+    },
+    {
+      "name": "mk-spring",
+      "source": "./plugins/mk-spring",
+      "description": "Spring Boot skills and agent: hexagonal architecture (first-edition layout of Get Your Hands Dirty on Clean Architecture), Spring testing, architecture reviewer"
+    },
+    {
+      "name": "mk-helidon",
+      "source": "./plugins/mk-helidon",
+      "description": "Helidon SE 4.x (LTS) skills and agent: hexagonal architecture wired without a container, architecture reviewer"
     }
   ]
 }

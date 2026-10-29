@@ -79,7 +79,7 @@ You never modify files.
    (`<Context>Configuration`, with the `@Bean` methods of its application services) and the general Spring Java config
    (`Clock`, security, web...). Adapters are created by the `*AdapterConfiguration` class of their own adapter package.
    Nothing may depend on a `@Configuration` class.
-12. **Tests** (see the `java-testing` skill of this plugin). Use cases are covered by `@SpringBootTest` tests named `*IT`
+12. **Tests** (see the `java-testing` skill of the `mk-java` plugin and `spring-testing` of this plugin). Use cases are covered by `@SpringBootTest` tests named `*IT`
    that run in the integration-test phase (`maven-failsafe-plugin`), with a real database in a container (Testcontainers)
    and third-party services mocked by WireMock. An embedded database (H2 or similar) in place of the production engine,
    or a `@SpringBootTest` run by surefire, is a violation. A slice test (`@WebMvcTest`, `@DataJpaTest`) is an

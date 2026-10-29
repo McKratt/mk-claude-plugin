@@ -1,0 +1,11 @@
+{
+  "name": "mk-helidon",
+  "description": "Helidon SE 4.x (LTS) skills and agent: hexagonal architecture wired without a container, architecture reviewer",
+  "version": "0.0.5",
+  "author": {
+    "name": "McKratt"
+  },
+  "dependencies": [
+    "mk-java"
+  ]
+}

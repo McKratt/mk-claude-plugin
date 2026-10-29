@@ -7,7 +7,7 @@ There is one `com.example.shop.common` and one `com.example.shop.configuration` 
 Replace names to fit the user's domain.
 
 Every Java file below is copied from `examples/helidon-single-context/` or, for the section on joining bounded
-contexts, `examples/helidon-multi-context/` of this plugin's repository, which CI builds and tests (`mvn verify`,
+contexts, `examples/helidon-multi-context/` of the McKratt/mk-claude-plugin repository, which CI builds and tests (`mvn verify`,
 Java 25, Helidon 4.5.6, PostgreSQL in Testcontainers, WireMock), except the domain service section, marked
 *not in the examples*.
 

@@ -168,7 +168,8 @@ https://start.spring.io rather than relying on memory.
 
 ## 5. Testing
 
-For detailed testing guidance, use the `java-testing` skill of this plugin.
+For detailed testing guidance, use the `java-testing` skill of the `mk-java` plugin (general rules) and the
+`spring-testing` skill of this plugin (Spring Boot mechanics).
 
 **Priority: `@SpringBootTest` tests that cover a whole use case**, not slice tests. Each important use case gets tests
 that start the application on a random port, call it through its real entry point (HTTP) and check the outcome:

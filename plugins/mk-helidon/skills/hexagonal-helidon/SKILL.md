@@ -12,11 +12,12 @@ sits at the center; web, persistence and other technology are replaceable adapte
 Following *Implementing Domain-Driven Design* (Vaughn Vernon), **application services** (in `application/service`)
 run the use cases and own the cross-cutting concerns (transactions, security), while the **domain** stays plain Java;
 **domain services** (in `domain/service`) are optional and exist only for a domain operation that spans several
-aggregates. The layout is the same as in the `hexagonal-spring` skill of this plugin, whose "Source" section explains
-the departure from the book's second edition.
+aggregates. This deliberately departs from the book's second edition, which nests `domain/model` and `domain/service`
+inside `application` and puts the use-case services in the domain, where cross-cutting concerns would then have to be
+tolerated. The same layout is used by the `hexagonal-spring` skill of the `mk-spring` plugin.
 
 Ready-to-adapt code lives in [references/templates.md](references/templates.md). Read it before generating code.
-Runnable projects built from these templates are in this plugin's repository: `examples/helidon-single-context/` (one
+Runnable projects built from these templates are in the McKratt/mk-claude-plugin repository: `examples/helidon-single-context/` (one
 bounded context) and `examples/helidon-multi-context/` (contexts `order` and `billing` joined by a `DomainAdapter`).
 
 ## 0. Helidon version: the LTS line, not the latest
@@ -217,8 +218,9 @@ main class may depend on them.
 
 ## 5. Testing
 
-The priorities of the `java-testing` skill of this plugin apply (use case tests first, AssertJ, BDD Mockito,
-snake_case test names, Arrange / Act / Assert); its Spring-specific mechanics are replaced as follows.
+The rules of the `java-testing` skill of the `mk-java` plugin apply (use case tests first, `*IT` run by failsafe,
+real database, WireMock, AssertJ, BDD Mockito, snake_case test names, Arrange / Act / Assert). This section gives the
+Helidon mechanics.
 
 **Priority: tests that cover a whole use case**, named `*IT` and run by `maven-failsafe-plugin` in the
 integration-test phase (`mvn verify`); surefire keeps the fast `*Test` tests.
@@ -276,7 +278,9 @@ Complement with, in this order of importance:
   edition (book repository `thombergs/buckpal`, branch `single-module`: `application/service`, `application/port/in|out`,
   `domain` without `model`); application services versus domain services from Vaughn Vernon, *Implementing
   Domain-Driven Design* (Addison-Wesley, 2013), chapters "Application" and "Services". The rules are the ones of the
-  `hexagonal-spring` skill of this plugin, adapted to a container-less framework.
+  `hexagonal-spring` skill (`mk-spring` plugin), adapted to a container-less framework. The second-edition layout was
+  confirmed by the author of these plugins with a photo of page 28; the book repository switched to it on 2023-06-09
+  (commit `ebdb694`).
 - Helidon LTS status: `CHANGELOG.md` of `helidon-io/helidon` on `main` (Helidon 27 entry: "Helidon 4 is considered an
   LTS release. Helidon 29 will be the next LTS release."), and the 4.5.6 entry ("A minimum of Java 21 is required to use
   Helidon 4. Java 25 is recommended.").
