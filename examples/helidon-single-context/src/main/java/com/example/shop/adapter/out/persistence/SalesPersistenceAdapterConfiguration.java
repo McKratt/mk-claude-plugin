@@ -2,23 +2,26 @@ package com.example.shop.adapter.out.persistence;
 
 import com.example.shop.application.port.out.OrderStore;
 import com.example.shop.application.port.out.TransactionRunner;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import io.helidon.config.Config;
-import io.helidon.dbclient.DbClient;
+import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 
 /**
- * The only public class of the package: it creates the persistence adapters, which stay package-private,
- * and hands them out as ports. Used only by the domain's configuration class.
+ * The only public class of the package: it creates the Hikari connection pool and the persistence adapters,
+ * which stay package-private, and hands them out as ports. Used only by the domain's configuration class.
  */
 public final class SalesPersistenceAdapterConfiguration {
 
-    private final DbClientTransactionRunner transactionRunner;
+    private final JdbcTransactionRunner transactionRunner;
     private final OrderPersistenceAdapter orderPersistenceAdapter;
 
-    /** @param dbConfig the {@code db} node of the configuration (DbClient settings) */
+    /** @param dbConfig the {@code db} node of the configuration (connection and pool settings) */
     public SalesPersistenceAdapterConfiguration(Config dbConfig) {
-        migrate(dbConfig.get("connection"));
-        transactionRunner = new DbClientTransactionRunner(DbClient.create(dbConfig));
+        var dataSource = dataSource(dbConfig);
+        migrate(dataSource);
+        transactionRunner = new JdbcTransactionRunner(dataSource);
         orderPersistenceAdapter = new OrderPersistenceAdapter(transactionRunner);
     }
 
@@ -30,12 +33,21 @@ public final class SalesPersistenceAdapterConfiguration {
         return transactionRunner;
     }
 
+    private static HikariDataSource dataSource(Config dbConfig) {
+        var connection = dbConfig.get("connection");
+        var hikari = new HikariConfig();
+        hikari.setPoolName("shop");
+        hikari.setJdbcUrl(connection.get("url").asString().get());
+        hikari.setUsername(connection.get("username").asString().get());
+        hikari.setPassword(connection.get("password").asString().get());
+        dbConfig.get("pool").get("maximum-pool-size").asInt().ifPresent(hikari::setMaximumPoolSize);
+        return new HikariDataSource(hikari);
+    }
+
     /** The adapter owns its schema: Flyway applies src/main/resources/db/migration before first use. */
-    private static void migrate(Config connection) {
+    private static void migrate(DataSource dataSource) {
         Flyway.configure()
-                .dataSource(connection.get("url").asString().get(),
-                        connection.get("username").asString().get(),
-                        connection.get("password").asString().get())
+                .dataSource(dataSource)
                 .load()
                 .migrate();
     }

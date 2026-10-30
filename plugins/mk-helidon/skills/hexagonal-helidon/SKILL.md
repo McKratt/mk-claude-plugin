@@ -43,7 +43,7 @@ Ask only for what is missing, in one short message:
 
 - Group ID, artifact ID and **base package** (for example `com.example.shop`)
 - The **bounded contexts** of the application: a single one (default) or their names (for example `order`, `billing`)
-- Persistence: Helidon DbClient over JDBC (default), none, or other
+- Persistence: plain JDBC on a HikariCP connection pool (default), none, or other
 - Database engine (PostgreSQL by default) and whether the schema is managed by Flyway (default)
 
 ## 2. Package structure
@@ -78,7 +78,7 @@ Layout of a hexagon (`<hexagon>` = `<base>` or `<base>/<context>`):
 │   └── service/                 # application services *Service: implement incoming ports, own transactions
 └── adapter/                     # each adapter package exposes one public *AdapterConfiguration (rule 7)
     ├── in/web/                  # *Controller implementing Helidon's HttpService, web models
-    ├── out/persistence/         # persistence adapter (DbClient), DbClientTransactionRunner, SQL
+    ├── out/persistence/         # persistence adapter (JDBC + Hikari), JdbcTransactionRunner, SQL
     └── out/<target-context>/    # DomainAdapter calling another bounded context of the application (rule 8)
 ```
 
@@ -95,7 +95,8 @@ main class may depend on them.
 1. **Dependencies point inward.** `adapter` → `application` (ports and services) → `domain`.
    - `domain` (including `domain/service`) depends on nothing but `common`: no `application`, no adapters.
    - **`domain` and `application` are plain Java**: no `io.helidon..` type, no container API (`jakarta.inject`,
-     `jakarta.enterprise`, `jakarta.ws.rs`), no ORM (JPA, Hibernate...), no Jackson, JSON-P/JSON-B or other JSON
+     `jakarta.enterprise`, `jakarta.ws.rs`), no ORM (JPA, Hibernate...), no JDBC (`java.sql`, `javax.sql`) or
+     connection pool, no Jackson, JSON-P/JSON-B or other JSON
      library. The cross-cutting concerns of the application services go through outgoing ports: the transaction
      boundary through `TransactionRunner` (rule 5), and likewise, when needed, the current user for authorization.
    - **Lombok and JSpecify are allowed in `domain` and `application`** (compile-time annotations only). Mark the
@@ -119,7 +120,7 @@ main class may depend on them.
    named after the operation, use only `domain` types and know nothing of transactions, security or ports.
    **An application service owns its transaction boundary through the outgoing port `TransactionRunner`**
    (`<T> T inTransaction(Supplier<T> work)`): commit when the work returns, rollback when it throws. The persistence
-   adapter implements it with `DbClient.transaction()` (rule 13). Queries that need no transaction do not use it.
+   adapter implements it on a JDBC connection of the Hikari pool (rule 13). Queries that need no transaction do not use it.
    With several bounded contexts on one database, each context keeps its own `TransactionRunner` port, and their
    adapters delegate to the application's shared `DbTransactions` (rule 10), so a use case that calls another context
    keeps **one** transaction: the callee joins the caller's, as with Spring's default propagation.
@@ -159,7 +160,7 @@ main class may depend on them.
     (all its contexts and layers). It depends on neither `domain`, `application`, `adapter` nor `configuration`.
     It is not shared with other applications (rule 9).
     **Exception for several contexts on one database: `common/persistence/DbTransactions`**, a public class holding the
-    application's single `DbClient` and binding the open `DbTransaction` to the current thread. It is technology, so only
+    application's single Hikari pool and binding the connection of the open transaction to the work. It is technology, so only
     persistence adapters and configuration classes may use it, never `application` (enforced by ArchUnit). This is a
     conscious shortcut of this skill: without it, two package-private transaction runners could not share a transaction.
 11. **Wiring of a bounded context.** Its file `configuration/<Context>Configuration` is a `public final` class: with a
@@ -173,21 +174,27 @@ main class may depend on them.
     created once in `main` with `Config.create()` and passed down explicitly as `Config` nodes. Do not read it from
     adapters or services through `Services.get(Config.class)` or `Config.global()`. Environment variables override keys
     (`DB_CONNECTION_URL` overrides `db.connection.url`).
-13. **Persistence with DbClient.** `helidon-dbclient` + `helidon-dbclient-jdbc` + `helidon-dbclient-hikari` and the JDBC
-    driver; the `db` config node holds `source: jdbc` and `connection` (`url`, `username`, `password`). The adapter owns
-    its SQL. Statements of a transaction run on the `DbTransaction` bound to the current thread by
-    `DbClientTransactionRunner` (Helidon serves each request on its own virtual thread). Pitfalls verified on 4.5.6:
-    - DbClient binds a `UUID` as a string: write `CAST(? AS UUID)` in PostgreSQL statements.
-    - When a statement of a transaction fails, DbClient closes the connection itself, so the following `rollback()`
-      throws: catch it and add it as suppressed to the original exception (template provided).
-    - Pass an `OffsetDateTime` (UTC) for a `TIMESTAMP WITH TIME ZONE` column.
-    The schema is applied by Flyway (`flyway-core` + `flyway-database-<engine>`) from the persistence adapter
-    configuration, before the `DbClient` is used. Do not use embedded substitutes such as H2.
+13. **Persistence with JDBC and a Hikari pool.** `com.zaxxer:HikariCP` (version managed by the Helidon BOM) and the
+    JDBC driver; no Helidon DbClient. The `db` config node holds `connection` (`url`, `username`, `password`) and `pool`
+    (`maximum-pool-size`), mapped explicitly onto a `HikariConfig` by the persistence adapter configuration, which
+    creates the `HikariDataSource`. The adapter owns its SQL and uses `PreparedStatement` (never string concatenation).
+    `JdbcTransactionRunner` takes a connection from the pool, sets auto-commit off and binds the connection to the work
+    with a `ScopedValue` (final in Java 25, no preview flag), so every statement of the use case runs on it; outside a
+    transaction, statements borrow a pooled connection in auto-commit. Details (template provided):
+    - Wrap `SQLException` in an unchecked exception that is **not** `IllegalArgumentException` (the web adapters turn
+      that one into a `400`); the examples use `IllegalStateException`.
+    - Roll back when the work throws and add a failing `rollback()` as suppressed to the original exception.
+    - Closing the connection hands it back to Hikari, which rolls back uncommitted work and restores auto-commit
+      (HikariCP `ProxyConnection.close()`).
+    - With PostgreSQL, bind `UUID` and `OffsetDateTime` (UTC, for `TIMESTAMP WITH TIME ZONE`) with `setObject` and read
+      them with `getObject(column, UUID.class)` / `getObject(column, OffsetDateTime.class)`: no `CAST` needed.
+    The schema is applied by Flyway (`flyway-core` + `flyway-database-<engine>`) on the same `DataSource`, from the
+    persistence adapter configuration, before the adapters are used. Do not use embedded substitutes such as H2.
     With several contexts, **each context owns a database schema** (for example `shop_order`, `shop_billing`) and
     migrates it with its own Flyway (`.schemas("shop_billing").locations("classpath:db/migration/billing")`, which
     also keeps its history table in that schema); its SQL names the schema, and no foreign key crosses contexts.
 14. **Naming**: interfaces as in rule 3, `*Service`, `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`,
-    `<Target>RestAdapter` (or the technology used), `DbClientTransactionRunner`, `DbTransactions`,
+    `<Target>RestAdapter` (or the technology used), `JdbcTransactionRunner`, `DbTransactions`,
     `<Context><Kind>AdapterConfiguration`, `<Context>Configuration`, `<App>Configuration`,
     `<App>Application`.
 15. **Rich domain model, immutable value objects.** The domain is **not anemic** (an *anemic domain model* is one whose
@@ -285,11 +292,13 @@ Complement with, in this order of importance:
   LTS release. Helidon 29 will be the next LTS release."), and the 4.5.6 entry ("A minimum of Java 21 is required to use
   Helidon 4. Java 25 is recommended.").
 - Helidon 4.5.6 documentation (`docs/` of tag `4.5.6`, published at https://helidon.io/docs/v4/): SE WebServer
-  (routing, `HttpService`, error handling, media support), Config, DbClient, WebClient, Testing (`@ServerTest`,
+  (routing, `HttpService`, error handling, media support), Config, WebClient, Testing (`@ServerTest`,
   `@RoutingTest`, `@SetUpRoute`), Dependency Management; preview status of Injection, Declarative and Data.
-- Helidon examples, branch `helidon-4.x`: `quickstarts/helidon-quickstart-se`, `dbclient/postgres`.
-- Helidon 4.5.6 sources for the DbClient transaction behavior (`JdbcTransaction`, `TransactionContext`,
-  `JdbcStatementDml`), confirmed by running `examples/helidon-single-context` against PostgreSQL.
+- Helidon examples, branch `helidon-4.x`: `quickstarts/helidon-quickstart-se`.
+- HikariCP: version 5.0.1 managed by `io.helidon:helidon-dependencies:4.5.6` (`version.lib.hikaricp`); the rollback and
+  auto-commit reset on close come from the sources of `com.zaxxer.hikari.pool.ProxyConnection` and `PoolBase` (5.0.1).
+- `ScopedValue`: JEP 506 (final in JDK 25). The JDBC persistence, the shared transaction across contexts and the
+  PostgreSQL type mappings were confirmed by running both Helidon examples (`mvn verify`) against PostgreSQL 17.
 - Rich domain model and value objects: Martin Fowler, "AnemicDomainModel" (https://martinfowler.com/bliki/AnemicDomainModel.html);
   value objects as immutable, compared by value: Eric Evans, *Domain-Driven Design* (Addison-Wesley, 2003), and Vaughn
   Vernon, *Implementing Domain-Driven Design*, chapter "Value Objects"; records: the Javadoc of `java.lang.Record`

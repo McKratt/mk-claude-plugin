@@ -27,6 +27,11 @@ class ArchitectureRulesDetectViolationsTest {
     }
 
     @Test
+    void should_detect_a_violation_when_a_service_uses_jdbc() {
+        assertViolation(ArchitectureTest.domainAndApplicationHaveNoJdbc, VIOLATIONS);
+    }
+
+    @Test
     void should_detect_a_violation_when_the_domain_uses_json() {
         assertViolation(ArchitectureTest.domainAndApplicationHaveNoOrmOrJson, VIOLATIONS);
     }

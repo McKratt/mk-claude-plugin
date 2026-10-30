@@ -2,7 +2,8 @@ package com.example.shop;
 
 import io.helidon.config.Config;
 import io.helidon.config.ConfigSources;
-import io.helidon.dbclient.DbClient;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.util.Map;
 import org.testcontainers.containers.PostgreSQLContainer;
 
@@ -34,8 +35,26 @@ final class TestInfrastructure {
                 .build();
     }
 
-    /** Direct database access for the tests' setup and assertions. */
-    static DbClient dbClient() {
-        return DbClient.create(config().get("db"));
+    /** Runs a statement directly on the database, for the tests' setup. */
+    static void execute(String sql) {
+        try (var connection = DriverManager.getConnection(
+                        POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+                var statement = connection.createStatement()) {
+            statement.execute(sql);
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** The number of rows of a table, for the tests' assertions. */
+    static long count(String table) {
+        try (var connection = DriverManager.getConnection(
+                        POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+                var resultSet = connection.createStatement().executeQuery("SELECT count(*) FROM " + table)) {
+            resultSet.next();
+            return resultSet.getLong(1);
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

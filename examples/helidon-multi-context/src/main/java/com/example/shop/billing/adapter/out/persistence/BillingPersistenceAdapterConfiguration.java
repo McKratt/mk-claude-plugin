@@ -4,7 +4,7 @@ import com.example.shop.billing.application.port.out.InvoiceFinder;
 import com.example.shop.billing.application.port.out.InvoiceStore;
 import com.example.shop.billing.application.port.out.TransactionRunner;
 import com.example.shop.common.persistence.DbTransactions;
-import io.helidon.config.Config;
+import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 
 /**
@@ -14,16 +14,13 @@ import org.flywaydb.core.Flyway;
 public final class BillingPersistenceAdapterConfiguration {
 
     private final InvoicePersistenceAdapter invoicePersistenceAdapter;
-    private final DbClientTransactionRunner transactionRunner;
+    private final JdbcTransactionRunner transactionRunner;
 
-    /**
-     * @param dbConfig       the {@code db} node of the configuration, for the schema migration
-     * @param dbTransactions the application's shared DbClient
-     */
-    public BillingPersistenceAdapterConfiguration(Config dbConfig, DbTransactions dbTransactions) {
-        migrate(dbConfig.get("connection"));
+    /** @param dbTransactions the application's shared connection pool and transaction */
+    public BillingPersistenceAdapterConfiguration(DbTransactions dbTransactions) {
+        migrate(dbTransactions.dataSource());
         invoicePersistenceAdapter = new InvoicePersistenceAdapter(dbTransactions);
-        transactionRunner = new DbClientTransactionRunner(dbTransactions);
+        transactionRunner = new JdbcTransactionRunner(dbTransactions);
     }
 
     public InvoiceStore invoiceStore() {
@@ -39,11 +36,9 @@ public final class BillingPersistenceAdapterConfiguration {
     }
 
     /** The context owns its schema (shop_billing) and its own Flyway history in it. */
-    private static void migrate(Config connection) {
+    private static void migrate(DataSource dataSource) {
         Flyway.configure()
-                .dataSource(connection.get("url").asString().get(),
-                        connection.get("username").asString().get(),
-                        connection.get("password").asString().get())
+                .dataSource(dataSource)
                 .schemas("shop_billing")
                 .locations("classpath:db/migration/billing")
                 .load()

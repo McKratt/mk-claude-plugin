@@ -31,6 +31,12 @@ class ArchitectureTest {
                     "io.helidon..", "jakarta.inject..", "jakarta.enterprise..", "jakarta.ws.rs..",
                     "org.springframework..");
 
+    // JDBC and the connection pool are persistence technology: they stay in the persistence adapters.
+    @ArchTest
+    static final ArchRule domainAndApplicationHaveNoJdbc = noClasses()
+            .that().resideInAnyPackage("..domain..", "..application..")
+            .should().dependOnClassesThat().resideInAnyPackage("java.sql..", "javax.sql..", "com.zaxxer.hikari..");
+
     @ArchTest
     static final ArchRule domainIsSelfContained = noClasses()
             .that().resideInAPackage("..domain..")

@@ -1,13 +1,13 @@
-package com.example.shop.order.adapter.out.persistence;
+package com.example.shop.billing.adapter.out.persistence;
 
 import com.example.shop.common.persistence.DbTransactions;
-import com.example.shop.order.application.port.out.TransactionRunner;
+import com.example.shop.billing.application.port.out.TransactionRunner;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 
-/** The order context's transaction port, backed by the application's shared {@link DbTransactions}. */
+/** The billing context's transaction port, backed by the application's shared {@link DbTransactions}. */
 @RequiredArgsConstructor
-class DbClientTransactionRunner implements TransactionRunner {
+class JdbcTransactionRunner implements TransactionRunner {
 
     private final DbTransactions dbTransactions;
 

@@ -9,7 +9,6 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.example.shop.configuration.ShopConfiguration;
-import io.helidon.dbclient.DbClient;
 import io.helidon.http.HeaderNames;
 import io.helidon.http.Status;
 import io.helidon.webclient.http1.Http1Client;
@@ -26,8 +25,6 @@ import org.junit.jupiter.api.Test;
 @ServerTest
 class PlaceOrderIT {
 
-    private static final DbClient DB = TestInfrastructure.dbClient();
-
     private final Http1Client client;
 
     PlaceOrderIT(Http1Client client) {
@@ -42,8 +39,8 @@ class PlaceOrderIT {
 
     @BeforeEach
     void clean_database_and_stubs() {
-        DB.execute().delete("DELETE FROM order_lines");
-        DB.execute().delete("DELETE FROM orders");
+        TestInfrastructure.execute("DELETE FROM order_lines");
+        TestInfrastructure.execute("DELETE FROM orders");
         TestInfrastructure.SHIPPING.resetAll();
     }
 
@@ -89,8 +86,6 @@ class PlaceOrderIT {
     }
 
     private static long count(String table) {
-        return DB.execute().get("SELECT count(*) AS n FROM " + table)
-                .orElseThrow()
-                .column("n").get(Long.class);
+        return TestInfrastructure.count(table);
     }
 }

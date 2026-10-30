@@ -8,8 +8,8 @@ import java.time.ZoneOffset;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Maps the domain order to the tables of the order context's schema. The SQL is owned by this adapter.
- * DbClient binds a UUID as a string, hence the explicit casts.
+ * Maps the domain order to the tables of the order context's schema with plain JDBC. The SQL is owned by this
+ * adapter. The PostgreSQL driver binds UUID and OffsetDateTime natively through setObject.
  */
 @RequiredArgsConstructor
 class OrderPersistenceAdapter implements OrderStore {
@@ -18,13 +18,23 @@ class OrderPersistenceAdapter implements OrderStore {
 
     @Override
     public void save(Order order) {
-        var db = dbTransactions.executor();
         var orderId = order.getId().value();
-        db.insert("INSERT INTO shop_order.orders (id, placed_at) VALUES (CAST(? AS UUID), ?)",
-                orderId, OffsetDateTime.ofInstant(order.getPlacedAt(), ZoneOffset.UTC));
-        for (var line : order.getLines()) {
-            db.insert("INSERT INTO shop_order.order_lines (order_id, sku, quantity) VALUES (CAST(? AS UUID), ?, ?)",
-                    orderId, line.sku(), line.quantity());
-        }
+        dbTransactions.run(connection -> {
+            try (var insertOrder = connection.prepareStatement(
+                            "INSERT INTO shop_order.orders (id, placed_at) VALUES (?, ?)");
+                    var insertLine = connection.prepareStatement(
+                            "INSERT INTO shop_order.order_lines (order_id, sku, quantity) VALUES (?, ?, ?)")) {
+                insertOrder.setObject(1, orderId);
+                insertOrder.setObject(2, OffsetDateTime.ofInstant(order.getPlacedAt(), ZoneOffset.UTC));
+                insertOrder.executeUpdate();
+                for (var line : order.getLines()) {
+                    insertLine.setObject(1, orderId);
+                    insertLine.setString(2, line.sku());
+                    insertLine.setInt(3, line.quantity());
+                    insertLine.addBatch();
+                }
+                insertLine.executeBatch();
+            }
+        });
     }
 }

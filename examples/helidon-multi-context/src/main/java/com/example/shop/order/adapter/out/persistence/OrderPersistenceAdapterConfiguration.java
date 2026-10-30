@@ -3,7 +3,7 @@ package com.example.shop.order.adapter.out.persistence;
 import com.example.shop.common.persistence.DbTransactions;
 import com.example.shop.order.application.port.out.OrderStore;
 import com.example.shop.order.application.port.out.TransactionRunner;
-import io.helidon.config.Config;
+import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 
 /**
@@ -13,16 +13,13 @@ import org.flywaydb.core.Flyway;
 public final class OrderPersistenceAdapterConfiguration {
 
     private final OrderPersistenceAdapter orderPersistenceAdapter;
-    private final DbClientTransactionRunner transactionRunner;
+    private final JdbcTransactionRunner transactionRunner;
 
-    /**
-     * @param dbConfig       the {@code db} node of the configuration, for the schema migration
-     * @param dbTransactions the application's shared DbClient
-     */
-    public OrderPersistenceAdapterConfiguration(Config dbConfig, DbTransactions dbTransactions) {
-        migrate(dbConfig.get("connection"));
+    /** @param dbTransactions the application's shared connection pool and transaction */
+    public OrderPersistenceAdapterConfiguration(DbTransactions dbTransactions) {
+        migrate(dbTransactions.dataSource());
         orderPersistenceAdapter = new OrderPersistenceAdapter(dbTransactions);
-        transactionRunner = new DbClientTransactionRunner(dbTransactions);
+        transactionRunner = new JdbcTransactionRunner(dbTransactions);
     }
 
     public OrderStore orderStore() {
@@ -34,11 +31,9 @@ public final class OrderPersistenceAdapterConfiguration {
     }
 
     /** The context owns its schema (shop_order) and its own Flyway history in it. */
-    private static void migrate(Config connection) {
+    private static void migrate(DataSource dataSource) {
         Flyway.configure()
-                .dataSource(connection.get("url").asString().get(),
-                        connection.get("username").asString().get(),
-                        connection.get("password").asString().get())
+                .dataSource(dataSource)
                 .schemas("shop_order")
                 .locations("classpath:db/migration/order")
                 .load()

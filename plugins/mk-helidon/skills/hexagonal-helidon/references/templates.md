@@ -70,16 +70,9 @@ ArchUnit, AssertJ, Mockito and WireMock are not managed by the Helidon BOM: look
       <artifactId>helidon-config-yaml</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.helidon.dbclient</groupId>
-      <artifactId>helidon-dbclient</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.helidon.dbclient</groupId>
-      <artifactId>helidon-dbclient-jdbc</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.helidon.dbclient</groupId>
-      <artifactId>helidon-dbclient-hikari</artifactId>
+      <!-- Connection pool; version managed by the Helidon BOM. -->
+      <groupId>com.zaxxer</groupId>
+      <artifactId>HikariCP</artifactId>
     </dependency>
     <dependency>
       <groupId>org.postgresql</groupId>
@@ -258,13 +251,15 @@ server:
   port: 8080
   host: 0.0.0.0
 
-# Helidon DbClient (JDBC + Hikari). Environment variables override these keys, for example DB_CONNECTION_URL.
+# Plain JDBC through a HikariCP connection pool. Environment variables override these keys, for example
+# DB_CONNECTION_URL.
 db:
-  source: jdbc
   connection:
     url: jdbc:postgresql://localhost:5432/shop
     username: shop
     password: shop
+  pool:
+    maximum-pool-size: 10
 
 shipping:
   base-url: http://localhost:8081
@@ -648,60 +643,96 @@ public final class SalesWebAdapterConfiguration {
 
 ## Persistence adapter (`adapter/out/persistence`)
 
-DbClient (JDBC + Hikari). `DbClientTransactionRunner` implements the `TransactionRunner` port and binds the open
-`DbTransaction` to the current thread; the persistence adapters of the package run their statements on
-`executor()`. Note the `CAST(? AS UUID)`: DbClient binds a `UUID` as a string.
+Plain JDBC on a HikariCP pool (`HikariDataSource`), created from the `db` config node by the adapter configuration,
+which also hands it to Flyway. `JdbcTransactionRunner` implements the `TransactionRunner` port: it takes a connection
+from the pool, turns auto-commit off and binds the connection to the work with a `ScopedValue` (final in Java 25);
+the persistence adapters of the package run their statements through `run(...)` / `call(...)`, which use the bound
+connection, or a pooled connection in auto-commit outside of a transaction. A `SQLException` is rethrown as an
+`IllegalStateException` (not an `IllegalArgumentException`, which the web adapters turn into a `400`). The PostgreSQL
+driver binds `UUID` and `OffsetDateTime` natively with `setObject`, so the SQL needs no cast.
 
 ```java
-// adapter/out/persistence/DbClientTransactionRunner.java
+// adapter/out/persistence/JdbcTransactionRunner.java
 package com.example.shop.adapter.out.persistence;
 
 import com.example.shop.application.port.out.TransactionRunner;
-import io.helidon.dbclient.DbClient;
-import io.helidon.dbclient.DbExecute;
-import io.helidon.dbclient.DbTransaction;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.function.Supplier;
+import javax.sql.DataSource;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Binds the open DbClient transaction to the current thread, so every persistence adapter of this package
- * joins it through {@link #executor()}. Helidon serves each request on its own virtual thread.
+ * Runs the work in one JDBC transaction on a connection of the Hikari pool. The connection is bound to the work
+ * with a {@link ScopedValue}, so every persistence adapter of this package joins it through {@link #run} and
+ * {@link #call}.
  */
 @RequiredArgsConstructor
-class DbClientTransactionRunner implements TransactionRunner {
+class JdbcTransactionRunner implements TransactionRunner {
 
-    private final DbClient dbClient;
-    private final ThreadLocal<DbTransaction> current = new ThreadLocal<>();
+    private final DataSource dataSource;
+    private final ScopedValue<Connection> current = ScopedValue.newInstance();
 
     @Override
     public <T> T inTransaction(Supplier<T> work) {
-        if (current.get() != null) {
+        if (current.isBound()) {
             return work.get();
         }
-        var transaction = dbClient.transaction();
-        current.set(transaction);
-        try {
-            T result = work.get();
-            transaction.commit();
-            return result;
-        } catch (RuntimeException | Error e) {
+        // Closing hands the connection back to Hikari, which rolls back uncommitted work and restores auto-commit.
+        try (var connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+            T result;
             try {
-                transaction.rollback();
-            } catch (RuntimeException rollbackFailure) {
-                // A failed statement already closed the connection (the pool then discards the work):
-                // keep the original failure visible.
-                e.addSuppressed(rollbackFailure);
+                result = ScopedValue.where(current, connection).call(work::get);
+            } catch (RuntimeException | Error e) {
+                rollback(connection, e);
+                throw e;
             }
-            throw e;
-        } finally {
-            current.remove();
+            connection.commit();
+            return result;
+        } catch (SQLException e) {
+            throw new IllegalStateException("Transaction failed: " + e.getMessage(), e);
         }
     }
 
-    /** The current transaction, or a non-transactional executor outside of one. */
-    DbExecute executor() {
-        var transaction = current.get();
-        return transaction != null ? transaction : dbClient.execute();
+    /** Runs the statements on the connection of the current transaction, or on a pooled connection in auto-commit. */
+    <T> T call(SqlFunction<T> statements) {
+        try {
+            if (current.isBound()) {
+                return statements.apply(current.get());
+            }
+            try (var connection = dataSource.getConnection()) {
+                return statements.apply(connection);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("SQL failed: " + e.getMessage(), e);
+        }
+    }
+
+    void run(SqlConsumer statements) {
+        call(connection -> {
+            statements.accept(connection);
+            return null;
+        });
+    }
+
+    private static void rollback(Connection connection, Throwable failure) {
+        try {
+            connection.rollback();
+        } catch (SQLException rollbackFailure) {
+            // Keep the original failure visible.
+            failure.addSuppressed(rollbackFailure);
+        }
+    }
+
+    @FunctionalInterface
+    interface SqlFunction<T> {
+        T apply(Connection connection) throws SQLException;
+    }
+
+    @FunctionalInterface
+    interface SqlConsumer {
+        void accept(Connection connection) throws SQLException;
     }
 }
 ```
@@ -717,24 +748,33 @@ import java.time.ZoneOffset;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Maps the domain order to the orders and order_lines tables. The SQL is owned by this adapter.
- * DbClient binds a UUID as a string, hence the explicit casts.
+ * Maps the domain order to the orders and order_lines tables with plain JDBC. The SQL is owned by this adapter.
+ * The PostgreSQL driver binds UUID and OffsetDateTime natively through setObject.
  */
 @RequiredArgsConstructor
 class OrderPersistenceAdapter implements OrderStore {
 
-    private final DbClientTransactionRunner transactionRunner;
+    private final JdbcTransactionRunner transactionRunner;
 
     @Override
     public void save(Order order) {
-        var db = transactionRunner.executor();
         var orderId = order.getId().value();
-        db.insert("INSERT INTO orders (id, placed_at) VALUES (CAST(? AS UUID), ?)",
-                orderId, OffsetDateTime.ofInstant(order.getPlacedAt(), ZoneOffset.UTC));
-        for (var line : order.getLines()) {
-            db.insert("INSERT INTO order_lines (order_id, sku, quantity) VALUES (CAST(? AS UUID), ?, ?)",
-                    orderId, line.sku(), line.quantity());
-        }
+        transactionRunner.run(connection -> {
+            try (var insertOrder = connection.prepareStatement("INSERT INTO orders (id, placed_at) VALUES (?, ?)");
+                    var insertLine = connection.prepareStatement(
+                            "INSERT INTO order_lines (order_id, sku, quantity) VALUES (?, ?, ?)")) {
+                insertOrder.setObject(1, orderId);
+                insertOrder.setObject(2, OffsetDateTime.ofInstant(order.getPlacedAt(), ZoneOffset.UTC));
+                insertOrder.executeUpdate();
+                for (var line : order.getLines()) {
+                    insertLine.setObject(1, orderId);
+                    insertLine.setString(2, line.sku());
+                    insertLine.setInt(3, line.quantity());
+                    insertLine.addBatch();
+                }
+                insertLine.executeBatch();
+            }
+        });
     }
 }
 ```
@@ -745,23 +785,26 @@ package com.example.shop.adapter.out.persistence;
 
 import com.example.shop.application.port.out.OrderStore;
 import com.example.shop.application.port.out.TransactionRunner;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import io.helidon.config.Config;
-import io.helidon.dbclient.DbClient;
+import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 
 /**
- * The only public class of the package: it creates the persistence adapters, which stay package-private,
- * and hands them out as ports. Used only by the domain's configuration class.
+ * The only public class of the package: it creates the Hikari connection pool and the persistence adapters,
+ * which stay package-private, and hands them out as ports. Used only by the domain's configuration class.
  */
 public final class SalesPersistenceAdapterConfiguration {
 
-    private final DbClientTransactionRunner transactionRunner;
+    private final JdbcTransactionRunner transactionRunner;
     private final OrderPersistenceAdapter orderPersistenceAdapter;
 
-    /** @param dbConfig the {@code db} node of the configuration (DbClient settings) */
+    /** @param dbConfig the {@code db} node of the configuration (connection and pool settings) */
     public SalesPersistenceAdapterConfiguration(Config dbConfig) {
-        migrate(dbConfig.get("connection"));
-        transactionRunner = new DbClientTransactionRunner(DbClient.create(dbConfig));
+        var dataSource = dataSource(dbConfig);
+        migrate(dataSource);
+        transactionRunner = new JdbcTransactionRunner(dataSource);
         orderPersistenceAdapter = new OrderPersistenceAdapter(transactionRunner);
     }
 
@@ -773,12 +816,21 @@ public final class SalesPersistenceAdapterConfiguration {
         return transactionRunner;
     }
 
+    private static HikariDataSource dataSource(Config dbConfig) {
+        var connection = dbConfig.get("connection");
+        var hikari = new HikariConfig();
+        hikari.setPoolName("shop");
+        hikari.setJdbcUrl(connection.get("url").asString().get());
+        hikari.setUsername(connection.get("username").asString().get());
+        hikari.setPassword(connection.get("password").asString().get());
+        dbConfig.get("pool").get("maximum-pool-size").asInt().ifPresent(hikari::setMaximumPoolSize);
+        return new HikariDataSource(hikari);
+    }
+
     /** The adapter owns its schema: Flyway applies src/main/resources/db/migration before first use. */
-    private static void migrate(Config connection) {
+    private static void migrate(DataSource dataSource) {
         Flyway.configure()
-                .dataSource(connection.get("url").asString().get(),
-                        connection.get("username").asString().get(),
-                        connection.get("password").asString().get())
+                .dataSource(dataSource)
                 .load()
                 .migrate();
     }
@@ -1000,7 +1052,7 @@ public final class OrderBillingDomainAdapterConfiguration {
 
 ### One transaction across contexts (`common/persistence`)
 
-The thread-bound transaction moves from the persistence adapter to the application's `common/persistence`, so that
+The pool and the bound connection move from the persistence adapter to the application's `common/persistence`, so that
 billing's `CreateInvoiceService` joins the transaction opened by order's `PlaceOrderService`. Each context keeps its
 own `TransactionRunner` port (same code as in the slice) and a thin adapter:
 
@@ -1008,67 +1060,112 @@ own `TransactionRunner` port (same code as in the slice) and a thin adapter:
 // common/persistence/DbTransactions.java
 package com.example.shop.common.persistence;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import io.helidon.config.Config;
-import io.helidon.dbclient.DbClient;
-import io.helidon.dbclient.DbExecute;
-import io.helidon.dbclient.DbTransaction;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.function.Supplier;
+import javax.sql.DataSource;
 
 /**
- * One DbClient for the whole application, with the open transaction bound to the current thread (Helidon serves
- * each request on its own virtual thread). The persistence adapters of every bounded context run their
- * statements on {@link #executor()}, so a use case of one context that calls another context through a
+ * One Hikari connection pool for the whole application, with the connection of the open transaction bound to the
+ * work through a {@link ScopedValue}. The persistence adapters of every bounded context run their statements
+ * through {@link #run} and {@link #call}, so a use case of one context that calls another context through a
  * DomainAdapter keeps a single transaction. Only persistence adapters and configuration classes may use it.
  */
 public final class DbTransactions {
 
-    private final DbClient dbClient;
-    private final ThreadLocal<DbTransaction> current = new ThreadLocal<>();
+    private final DataSource dataSource;
+    private final ScopedValue<Connection> current = ScopedValue.newInstance();
 
-    private DbTransactions(DbClient dbClient) {
-        this.dbClient = dbClient;
+    private DbTransactions(DataSource dataSource) {
+        this.dataSource = dataSource;
     }
 
-    /** @param dbConfig the {@code db} node of the configuration (DbClient settings) */
+    /** @param dbConfig the {@code db} node of the configuration (connection and pool settings) */
     public static DbTransactions create(Config dbConfig) {
-        return new DbTransactions(DbClient.create(dbConfig));
+        var connection = dbConfig.get("connection");
+        var hikari = new HikariConfig();
+        hikari.setPoolName("shop");
+        hikari.setJdbcUrl(connection.get("url").asString().get());
+        hikari.setUsername(connection.get("username").asString().get());
+        hikari.setPassword(connection.get("password").asString().get());
+        dbConfig.get("pool").get("maximum-pool-size").asInt().ifPresent(hikari::setMaximumPoolSize);
+        return new DbTransactions(new HikariDataSource(hikari));
+    }
+
+    /** The pool, for the schema migrations of the persistence adapter configurations. */
+    public DataSource dataSource() {
+        return dataSource;
     }
 
     /** Runs the work in the open transaction, or in a new one that commits when it returns and rolls back when it throws. */
     public <T> T inTransaction(Supplier<T> work) {
-        if (current.get() != null) {
+        if (current.isBound()) {
             return work.get();
         }
-        var transaction = dbClient.transaction();
-        current.set(transaction);
-        try {
-            T result = work.get();
-            transaction.commit();
-            return result;
-        } catch (RuntimeException | Error e) {
+        // Closing hands the connection back to Hikari, which rolls back uncommitted work and restores auto-commit.
+        try (var connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+            T result;
             try {
-                transaction.rollback();
-            } catch (RuntimeException rollbackFailure) {
-                // A failed statement already closed the connection (the pool then discards the work):
-                // keep the original failure visible.
-                e.addSuppressed(rollbackFailure);
+                result = ScopedValue.where(current, connection).call(work::get);
+            } catch (RuntimeException | Error e) {
+                rollback(connection, e);
+                throw e;
             }
-            throw e;
-        } finally {
-            current.remove();
+            connection.commit();
+            return result;
+        } catch (SQLException e) {
+            throw new IllegalStateException("Transaction failed: " + e.getMessage(), e);
         }
     }
 
-    /** The current transaction, or a non-transactional executor outside of one. */
-    public DbExecute executor() {
-        var transaction = current.get();
-        return transaction != null ? transaction : dbClient.execute();
+    /** Runs the statements on the connection of the current transaction, or on a pooled connection in auto-commit. */
+    public <T> T call(SqlFunction<T> statements) {
+        try {
+            if (current.isBound()) {
+                return statements.apply(current.get());
+            }
+            try (var connection = dataSource.getConnection()) {
+                return statements.apply(connection);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("SQL failed: " + e.getMessage(), e);
+        }
+    }
+
+    public void run(SqlConsumer statements) {
+        call(connection -> {
+            statements.accept(connection);
+            return null;
+        });
+    }
+
+    private static void rollback(Connection connection, Throwable failure) {
+        try {
+            connection.rollback();
+        } catch (SQLException rollbackFailure) {
+            // Keep the original failure visible.
+            failure.addSuppressed(rollbackFailure);
+        }
+    }
+
+    @FunctionalInterface
+    public interface SqlFunction<T> {
+        T apply(Connection connection) throws SQLException;
+    }
+
+    @FunctionalInterface
+    public interface SqlConsumer {
+        void accept(Connection connection) throws SQLException;
     }
 }
 ```
 
 ```java
-// billing/adapter/out/persistence/DbClientTransactionRunner.java
+// billing/adapter/out/persistence/JdbcTransactionRunner.java
 package com.example.shop.billing.adapter.out.persistence;
 
 import com.example.shop.common.persistence.DbTransactions;
@@ -1078,7 +1175,7 @@ import lombok.RequiredArgsConstructor;
 
 /** The billing context's transaction port, backed by the application's shared {@link DbTransactions}. */
 @RequiredArgsConstructor
-class DbClientTransactionRunner implements TransactionRunner {
+class JdbcTransactionRunner implements TransactionRunner {
 
     private final DbTransactions dbTransactions;
 
@@ -1121,7 +1218,8 @@ public class CreateInvoiceService implements InvoiceCreation {
 ### One schema per context
 
 Each context migrates its own schema with its own Flyway history; the SQL names the schema, and no foreign key
-crosses contexts. Reading a row: `UUID` and `TIMESTAMP WITH TIME ZONE` are read as `String` and `java.sql.Timestamp`.
+crosses contexts. Reading a row: `UUID` and `TIMESTAMP WITH TIME ZONE` are read with
+`getObject(column, UUID.class)` and `getObject(column, OffsetDateTime.class)`.
 
 ```java
 // billing/adapter/out/persistence/BillingPersistenceAdapterConfiguration.java
@@ -1131,7 +1229,7 @@ import com.example.shop.billing.application.port.out.InvoiceFinder;
 import com.example.shop.billing.application.port.out.InvoiceStore;
 import com.example.shop.billing.application.port.out.TransactionRunner;
 import com.example.shop.common.persistence.DbTransactions;
-import io.helidon.config.Config;
+import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 
 /**
@@ -1141,16 +1239,13 @@ import org.flywaydb.core.Flyway;
 public final class BillingPersistenceAdapterConfiguration {
 
     private final InvoicePersistenceAdapter invoicePersistenceAdapter;
-    private final DbClientTransactionRunner transactionRunner;
+    private final JdbcTransactionRunner transactionRunner;
 
-    /**
-     * @param dbConfig       the {@code db} node of the configuration, for the schema migration
-     * @param dbTransactions the application's shared DbClient
-     */
-    public BillingPersistenceAdapterConfiguration(Config dbConfig, DbTransactions dbTransactions) {
-        migrate(dbConfig.get("connection"));
+    /** @param dbTransactions the application's shared connection pool and transaction */
+    public BillingPersistenceAdapterConfiguration(DbTransactions dbTransactions) {
+        migrate(dbTransactions.dataSource());
         invoicePersistenceAdapter = new InvoicePersistenceAdapter(dbTransactions);
-        transactionRunner = new DbClientTransactionRunner(dbTransactions);
+        transactionRunner = new JdbcTransactionRunner(dbTransactions);
     }
 
     public InvoiceStore invoiceStore() {
@@ -1166,11 +1261,9 @@ public final class BillingPersistenceAdapterConfiguration {
     }
 
     /** The context owns its schema (shop_billing) and its own Flyway history in it. */
-    private static void migrate(Config connection) {
+    private static void migrate(DataSource dataSource) {
         Flyway.configure()
-                .dataSource(connection.get("url").asString().get(),
-                        connection.get("username").asString().get(),
-                        connection.get("password").asString().get())
+                .dataSource(dataSource)
                 .schemas("shop_billing")
                 .locations("classpath:db/migration/billing")
                 .load()
@@ -1187,14 +1280,18 @@ import com.example.shop.billing.domain.Invoice;
 import com.example.shop.billing.application.port.out.InvoiceFinder;
 import com.example.shop.billing.application.port.out.InvoiceStore;
 import com.example.shop.common.persistence.DbTransactions;
-import io.helidon.dbclient.DbRow;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 
-/** Maps invoices to the billing context's schema. DbClient binds a UUID as a string, hence the explicit casts. */
+/**
+ * Maps invoices to the billing context's schema with plain JDBC. The PostgreSQL driver binds and reads UUID and
+ * OffsetDateTime natively through setObject and getObject.
+ */
 @RequiredArgsConstructor
 class InvoicePersistenceAdapter implements InvoiceStore, InvoiceFinder {
 
@@ -1202,27 +1299,37 @@ class InvoicePersistenceAdapter implements InvoiceStore, InvoiceFinder {
 
     @Override
     public void save(Invoice invoice) {
-        dbTransactions.executor().insert(
-                "INSERT INTO shop_billing.invoices (id, order_id, item_count, issued_at)"
-                        + " VALUES (CAST(? AS UUID), CAST(? AS UUID), ?, ?)",
-                invoice.getId(), invoice.getOrderId(), invoice.getItemCount(),
-                OffsetDateTime.ofInstant(invoice.getIssuedAt(), ZoneOffset.UTC));
+        dbTransactions.run(connection -> {
+            try (var insert = connection.prepareStatement(
+                    "INSERT INTO shop_billing.invoices (id, order_id, item_count, issued_at) VALUES (?, ?, ?, ?)")) {
+                insert.setObject(1, invoice.getId());
+                insert.setObject(2, invoice.getOrderId());
+                insert.setInt(3, invoice.getItemCount());
+                insert.setObject(4, OffsetDateTime.ofInstant(invoice.getIssuedAt(), ZoneOffset.UTC));
+                insert.executeUpdate();
+            }
+        });
     }
 
     @Override
     public Optional<Invoice> loadByOrderId(UUID orderId) {
-        return dbTransactions.executor()
-                .get("SELECT CAST(id AS VARCHAR) AS id, item_count, issued_at FROM shop_billing.invoices"
-                        + " WHERE order_id = CAST(? AS UUID)", orderId)
-                .map(row -> toInvoice(row, orderId));
+        return dbTransactions.call(connection -> {
+            try (var select = connection.prepareStatement(
+                    "SELECT id, item_count, issued_at FROM shop_billing.invoices WHERE order_id = ?")) {
+                select.setObject(1, orderId);
+                try (var rows = select.executeQuery()) {
+                    return rows.next() ? Optional.of(toInvoice(rows, orderId)) : Optional.<Invoice>empty();
+                }
+            }
+        });
     }
 
-    private static Invoice toInvoice(DbRow row, UUID orderId) {
+    private static Invoice toInvoice(ResultSet row, UUID orderId) throws SQLException {
         return Invoice.restore(
-                UUID.fromString(row.column("id").get(String.class)),
+                row.getObject("id", UUID.class),
                 orderId,
-                row.column("item_count").get(Integer.class),
-                row.column("issued_at").get(java.sql.Timestamp.class).toInstant());
+                row.getInt("item_count"),
+                row.getObject("issued_at", OffsetDateTime.class).toInstant());
     }
 }
 ```
@@ -1254,7 +1361,6 @@ import com.example.shop.billing.application.service.FindInvoiceByOrderService;
 import com.example.shop.billing.application.port.in.InvoiceCreation;
 import com.example.shop.billing.application.port.in.InvoiceLookup;
 import com.example.shop.common.persistence.DbTransactions;
-import io.helidon.config.Config;
 import io.helidon.webserver.http.HttpRules;
 import java.time.Clock;
 
@@ -1264,8 +1370,8 @@ public final class BillingConfiguration {
     private final InvoiceCreation invoiceCreation;
     private final InvoiceLookup invoiceLookup;
 
-    public BillingConfiguration(Config dbConfig, DbTransactions dbTransactions, Clock clock) {
-        var persistence = new BillingPersistenceAdapterConfiguration(dbConfig, dbTransactions);
+    public BillingConfiguration(DbTransactions dbTransactions, Clock clock) {
+        var persistence = new BillingPersistenceAdapterConfiguration(dbTransactions);
         invoiceCreation = new CreateInvoiceService(persistence.invoiceStore(), persistence.transactionRunner(), clock);
         invoiceLookup = new FindInvoiceByOrderService(persistence.invoiceFinder());
     }
@@ -1291,7 +1397,6 @@ import com.example.shop.order.adapter.out.billing.OrderBillingDomainAdapterConfi
 import com.example.shop.order.adapter.out.persistence.OrderPersistenceAdapterConfiguration;
 import com.example.shop.order.application.service.PlaceOrderService;
 import com.example.shop.order.application.port.in.OrderPlacement;
-import io.helidon.config.Config;
 import io.helidon.webserver.http.HttpRules;
 import java.time.Clock;
 
@@ -1300,9 +1405,8 @@ public final class OrderConfiguration {
 
     private final OrderPlacement orderPlacement;
 
-    public OrderConfiguration(Config dbConfig, DbTransactions dbTransactions, Clock clock,
-            InvoiceCreation invoiceCreation) {
-        var persistence = new OrderPersistenceAdapterConfiguration(dbConfig, dbTransactions);
+    public OrderConfiguration(DbTransactions dbTransactions, Clock clock, InvoiceCreation invoiceCreation) {
+        var persistence = new OrderPersistenceAdapterConfiguration(dbTransactions);
         var invoiceIssuer = OrderBillingDomainAdapterConfiguration.invoiceIssuer(invoiceCreation);
         orderPlacement = new PlaceOrderService(
                 persistence.orderStore(), invoiceIssuer, persistence.transactionRunner(), clock);
@@ -1324,7 +1428,7 @@ import io.helidon.webserver.http.HttpRouting;
 import java.time.Clock;
 
 /**
- * Application-wide assembly, used by main and by the *IT tests: shared objects (Clock, one DbClient), then one
+ * Application-wide assembly, used by main and by the *IT tests: shared objects (Clock, one connection pool), then one
  * configuration per bounded context, the target context (billing) before the context that calls it (order),
  * which receives billing's incoming port.
  */
@@ -1335,11 +1439,10 @@ public final class ShopConfiguration {
 
     public static void routing(HttpRouting.Builder routing, Config config) {
         var clock = Clock.systemUTC();
-        var dbConfig = config.get("db");
-        var dbTransactions = DbTransactions.create(dbConfig);
+        var dbTransactions = DbTransactions.create(config.get("db"));
 
-        var billing = new BillingConfiguration(dbConfig, dbTransactions, clock);
-        var order = new OrderConfiguration(dbConfig, dbTransactions, clock, billing.invoiceCreation());
+        var billing = new BillingConfiguration(dbTransactions, clock);
+        var order = new OrderConfiguration(dbTransactions, clock, billing.invoiceCreation());
 
         billing.routing(routing);
         order.routing(routing);
@@ -1355,7 +1458,7 @@ Added to the `ArchitectureTest` below (with `import static com.tngtech.archunit.
 class of order holding a billing domain object):
 
 ```java
-    // The application's shared DbClient (common.persistence) is technology: only persistence adapters and
+    // The application's shared connection pool (common.persistence) is technology: only persistence adapters and
     // configuration classes may use it, never the application.
     @ArchTest
     static final ArchRule sharedPersistenceIsUsedOnlyByPersistenceAdapters = noClasses()
@@ -1396,14 +1499,14 @@ context, the invoice would stay. The full test is `examples/helidon-multi-contex
      */
     @Test
     void should_store_no_invoice_when_the_order_transaction_fails_at_commit() {
-        DB.execute().dml("CREATE OR REPLACE FUNCTION shop_order.fail_at_commit() RETURNS trigger"
+        TestInfrastructure.execute("CREATE OR REPLACE FUNCTION shop_order.fail_at_commit() RETURNS trigger"
                 + " LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'commit refused'; END $$");
-        DB.execute().dml("CREATE CONSTRAINT TRIGGER fail_at_commit AFTER INSERT ON shop_order.orders"
+        TestInfrastructure.execute("CREATE CONSTRAINT TRIGGER fail_at_commit AFTER INSERT ON shop_order.orders"
                 + " DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION shop_order.fail_at_commit()");
         try (var response = postOrder("{\"lines\":[{\"sku\":\"SKU-1\",\"quantity\":1}]}")) {
             assertThat(response.status().family()).isEqualTo(Status.Family.SERVER_ERROR);
         } finally {
-            DB.execute().dml("DROP TRIGGER fail_at_commit ON shop_order.orders");
+            TestInfrastructure.execute("DROP TRIGGER fail_at_commit ON shop_order.orders");
         }
 
         assertThat(count("shop_order.orders")).isZero();
@@ -1449,6 +1552,12 @@ class ArchitectureTest {
             .should().dependOnClassesThat().resideInAnyPackage(
                     "io.helidon..", "jakarta.inject..", "jakarta.enterprise..", "jakarta.ws.rs..",
                     "org.springframework..");
+
+    // JDBC and the connection pool are persistence technology: they stay in the persistence adapters.
+    @ArchTest
+    static final ArchRule domainAndApplicationHaveNoJdbc = noClasses()
+            .that().resideInAnyPackage("..domain..", "..application..")
+            .should().dependOnClassesThat().resideInAnyPackage("java.sql..", "javax.sql..", "com.zaxxer.hikari..");
 
     @ArchTest
     static final ArchRule domainIsSelfContained = noClasses()
@@ -1563,6 +1672,11 @@ class ArchitectureRulesDetectViolationsTest {
     }
 
     @Test
+    void should_detect_a_violation_when_a_service_uses_jdbc() {
+        assertViolation(ArchitectureTest.domainAndApplicationHaveNoJdbc, VIOLATIONS);
+    }
+
+    @Test
     void should_detect_a_violation_when_the_domain_uses_json() {
         assertViolation(ArchitectureTest.domainAndApplicationHaveNoOrmOrJson, VIOLATIONS);
     }
@@ -1627,7 +1741,8 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import io.helidon.config.Config;
 import io.helidon.config.ConfigSources;
-import io.helidon.dbclient.DbClient;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.util.Map;
 import org.testcontainers.containers.PostgreSQLContainer;
 
@@ -1662,9 +1777,27 @@ final class TestInfrastructure {
                 .build();
     }
 
-    /** Direct database access for the tests' setup and assertions. */
-    static DbClient dbClient() {
-        return DbClient.create(config().get("db"));
+    /** Runs a statement directly on the database, for the tests' setup. */
+    static void execute(String sql) {
+        try (var connection = DriverManager.getConnection(
+                        POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+                var statement = connection.createStatement()) {
+            statement.execute(sql);
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** The number of rows of a table, for the tests' assertions. */
+    static long count(String table) {
+        try (var connection = DriverManager.getConnection(
+                        POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+                var resultSet = connection.createStatement().executeQuery("SELECT count(*) FROM " + table)) {
+            resultSet.next();
+            return resultSet.getLong(1);
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }
 ```
@@ -1682,7 +1815,6 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.example.shop.configuration.ShopConfiguration;
-import io.helidon.dbclient.DbClient;
 import io.helidon.http.HeaderNames;
 import io.helidon.http.Status;
 import io.helidon.webclient.http1.Http1Client;
@@ -1699,8 +1831,6 @@ import org.junit.jupiter.api.Test;
 @ServerTest
 class PlaceOrderIT {
 
-    private static final DbClient DB = TestInfrastructure.dbClient();
-
     private final Http1Client client;
 
     PlaceOrderIT(Http1Client client) {
@@ -1715,8 +1845,8 @@ class PlaceOrderIT {
 
     @BeforeEach
     void clean_database_and_stubs() {
-        DB.execute().delete("DELETE FROM order_lines");
-        DB.execute().delete("DELETE FROM orders");
+        TestInfrastructure.execute("DELETE FROM order_lines");
+        TestInfrastructure.execute("DELETE FROM orders");
         TestInfrastructure.SHIPPING.resetAll();
     }
 
@@ -1762,9 +1892,7 @@ class PlaceOrderIT {
     }
 
     private static long count(String table) {
-        return DB.execute().get("SELECT count(*) AS n FROM " + table)
-                .orElseThrow()
-                .column("n").get(Long.class);
+        return TestInfrastructure.count(table);
     }
 }
 ```
