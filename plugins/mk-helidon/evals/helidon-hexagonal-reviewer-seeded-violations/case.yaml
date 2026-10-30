@@ -1,0 +1,5 @@
+# Copies fixture/ into the sandbox working directory before the run (needs --scaffold).
+schema_version: "1.0"
+name: helidon-hexagonal-reviewer-seeded-violations
+context:
+  scaffold_script: scaffold.sh

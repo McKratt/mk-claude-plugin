@@ -48,6 +48,8 @@ plugins/<plugin>/.claude-plugin/plugin.json # manifest of each plugin (name, ver
 plugins/<plugin>/skills/<name>/SKILL.md    # one directory per skill
 plugins/<plugin>/skills/<name>/references/ # supporting files a skill reads on demand (for example templates.md)
 plugins/<plugin>/agents/<name>.md          # one file per subagent
+plugins/<plugin>/evals/<case>/             # eval cases of its skills and agents (prompt.md + graders/), run by `claude plugin eval`
+tests/check_plugin.py                      # static checks: manifests, frontmatter, links, README, eval coverage
 examples/                                  # runnable Spring Boot and Helidon projects that follow the skills, built by CI
 ```
 
@@ -60,6 +62,30 @@ claude --plugin-dir plugins/mk-java --plugin-dir plugins/mk-spring
 ```
 
 Run `/reload-plugins` inside a session after editing files.
+
+## Tests
+
+Two levels, both run by the [`plugin`](.github/workflows/plugin.yml) workflow:
+
+- **Static checks** (free, every push): `claude plugin validate` on the marketplace and each plugin, and
+  `python3 tests/check_plugin.py`. The script fails if a skill or agent has no eval case tagged with its name, if a
+  plugin has no case tagged `negative`, or if a case does not load its plugin and the plugin's dependencies.
+- **Evals** (real Claude sessions, on pull requests and on demand, one matrix job per plugin): one directory per case
+  under `plugins/<plugin>/evals/`, with the prompt in `prompt.md` and one grader per file in `graders/` (mostly
+  regexes on the answer, an LLM rubric where a regex cannot judge). In the `prompt.md` frontmatter, `tags` names the
+  skill or agent the case covers and `plugins` loads the plugin and its dependencies (`mk-java`), relative to the case
+  directory. The eval therefore runs from the repository root, with `--eval-dir` pointing at the plugin's cases. The reviewer cases
+  copy a small project with seeded violations (`fixture/`) into the sandbox through `scaffold.sh`. Every case also
+  runs without the plugins, so the report shows what they add. The workflow needs the repository secret
+  `ANTHROPIC_API_KEY`; without it the eval jobs are skipped with a warning.
+
+```bash
+python3 tests/check_plugin.py
+claude plugin eval . --eval-dir plugins/mk-spring/evals --scaffold --no-publish     # one plugin, 3 runs per case, with and without it
+claude plugin eval . --eval-dir plugins/mk-spring/evals --scaffold --no-publish --case 'spring-testing-*' --runs 1 --ablation none   # quick iteration
+```
+
+When adding a skill or agent, add at least one eval case tagged with its name.
 
 ## Versioning
 

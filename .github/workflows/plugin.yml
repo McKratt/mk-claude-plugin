@@ -1,0 +1,80 @@
+name: plugin
+
+on:
+  push:
+    paths: ["plugins/**", "tests/**", ".claude-plugin/**", "README.md", ".github/workflows/plugin.yml"]
+  pull_request:
+    paths: ["plugins/**", "tests/**", ".claude-plugin/**", "README.md", ".github/workflows/plugin.yml"]
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Runs per eval case
+        default: "3"
+      case:
+        description: Only the eval cases matching this name glob (empty = all)
+        default: ""
+
+jobs:
+  structure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Validate the marketplace and plugin manifests
+        run: |
+          claude plugin validate .
+          for plugin in plugins/*/; do claude plugin validate "$plugin"; done
+      - name: Check skills, agents, README and eval coverage
+        run: python3 tests/check_plugin.py
+
+  evals:
+    needs: structure
+    runs-on: ubuntu-latest
+    # Each case starts real Claude sessions: run on pull requests and on demand, not on every push.
+    if: github.event_name != 'push'
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: [mk-java, mk-spring, mk-helidon]
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Skip without an API key
+        if: env.ANTHROPIC_API_KEY == ''
+        run: echo "::warning::ANTHROPIC_API_KEY secret is not set (or not available to this pull request); evals skipped."
+      - name: Install Claude Code
+        if: env.ANTHROPIC_API_KEY != ''
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      # Run from the repository root: each case's `plugins` list loads its plugin and the plugin's dependencies
+      # (mk-java), which a plugin directory as target could not reach.
+      - name: Run the eval suite
+        if: env.ANTHROPIC_API_KEY != ''
+        env:
+          PLUGIN: ${{ matrix.plugin }}
+          RUNS: ${{ inputs.runs || '3' }}
+          CASE: ${{ inputs.case }}
+        run: |
+          claude plugin eval . \
+            --eval-dir "plugins/$PLUGIN/evals" \
+            --trust-plugin --scaffold --no-publish \
+            --ablation with-without \
+            --runs "$RUNS" ${CASE:+--case "$CASE"} \
+            --concurrency 4 \
+            --judge-model sonnet \
+            --threshold 0.8 \
+            --max-cost-usd 10 \
+            --report "plugins/$PLUGIN/evals/results/report.html"
+      - name: Upload the eval report
+        if: always() && env.ANTHROPIC_API_KEY != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: eval-results-${{ matrix.plugin }}
+          path: plugins/${{ matrix.plugin }}/evals/results/
+          if-no-files-found: ignore
