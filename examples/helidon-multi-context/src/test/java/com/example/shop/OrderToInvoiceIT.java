@@ -3,7 +3,6 @@ package com.example.shop;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.example.shop.configuration.ShopConfiguration;
-import io.helidon.dbclient.DbClient;
 import io.helidon.http.HeaderNames;
 import io.helidon.http.Status;
 import io.helidon.webclient.http1.Http1Client;
@@ -24,7 +23,6 @@ import org.junit.jupiter.api.Test;
 class OrderToInvoiceIT {
 
     private static final Pattern ID = Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-fA-F-]{36})\"");
-    private static final DbClient DB = TestInfrastructure.dbClient();
 
     private final Http1Client client;
 
@@ -40,9 +38,9 @@ class OrderToInvoiceIT {
 
     @BeforeEach
     void clean_database() {
-        DB.execute().delete("DELETE FROM shop_billing.invoices");
-        DB.execute().delete("DELETE FROM shop_order.order_lines");
-        DB.execute().delete("DELETE FROM shop_order.orders");
+        TestInfrastructure.execute("DELETE FROM shop_billing.invoices");
+        TestInfrastructure.execute("DELETE FROM shop_order.order_lines");
+        TestInfrastructure.execute("DELETE FROM shop_order.orders");
     }
 
     @Test
@@ -67,14 +65,14 @@ class OrderToInvoiceIT {
     /** Billing joins order's transaction (shared DbTransactions): a billing failure rolls the order back. */
     @Test
     void should_store_no_order_when_billing_fails_to_create_the_invoice() {
-        DB.execute().dml("CREATE OR REPLACE FUNCTION shop_billing.fail_invoice() RETURNS trigger"
+        TestInfrastructure.execute("CREATE OR REPLACE FUNCTION shop_billing.fail_invoice() RETURNS trigger"
                 + " LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'billing down'; END $$");
-        DB.execute().dml("CREATE TRIGGER fail_invoice BEFORE INSERT ON shop_billing.invoices"
+        TestInfrastructure.execute("CREATE TRIGGER fail_invoice BEFORE INSERT ON shop_billing.invoices"
                 + " FOR EACH ROW EXECUTE FUNCTION shop_billing.fail_invoice()");
         try (var response = postOrder("{\"lines\":[{\"sku\":\"SKU-1\",\"quantity\":1}]}")) {
             assertThat(response.status().family()).isEqualTo(Status.Family.SERVER_ERROR);
         } finally {
-            DB.execute().dml("DROP TRIGGER fail_invoice ON shop_billing.invoices");
+            TestInfrastructure.execute("DROP TRIGGER fail_invoice ON shop_billing.invoices");
         }
 
         assertThat(count("shop_order.orders")).isZero();
@@ -87,14 +85,14 @@ class OrderToInvoiceIT {
      */
     @Test
     void should_store_no_invoice_when_the_order_transaction_fails_at_commit() {
-        DB.execute().dml("CREATE OR REPLACE FUNCTION shop_order.fail_at_commit() RETURNS trigger"
+        TestInfrastructure.execute("CREATE OR REPLACE FUNCTION shop_order.fail_at_commit() RETURNS trigger"
                 + " LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'commit refused'; END $$");
-        DB.execute().dml("CREATE CONSTRAINT TRIGGER fail_at_commit AFTER INSERT ON shop_order.orders"
+        TestInfrastructure.execute("CREATE CONSTRAINT TRIGGER fail_at_commit AFTER INSERT ON shop_order.orders"
                 + " DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION shop_order.fail_at_commit()");
         try (var response = postOrder("{\"lines\":[{\"sku\":\"SKU-1\",\"quantity\":1}]}")) {
             assertThat(response.status().family()).isEqualTo(Status.Family.SERVER_ERROR);
         } finally {
-            DB.execute().dml("DROP TRIGGER fail_at_commit ON shop_order.orders");
+            TestInfrastructure.execute("DROP TRIGGER fail_at_commit ON shop_order.orders");
         }
 
         assertThat(count("shop_order.orders")).isZero();
@@ -125,8 +123,6 @@ class OrderToInvoiceIT {
     }
 
     private static long count(String table) {
-        return DB.execute().get("SELECT count(*) AS n FROM " + table)
-                .orElseThrow()
-                .column("n").get(Long.class);
+        return TestInfrastructure.count(table);
     }
 }

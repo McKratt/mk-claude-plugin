@@ -52,16 +52,9 @@
       <artifactId>helidon-config-yaml</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.helidon.dbclient</groupId>
-      <artifactId>helidon-dbclient</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.helidon.dbclient</groupId>
-      <artifactId>helidon-dbclient-jdbc</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.helidon.dbclient</groupId>
-      <artifactId>helidon-dbclient-hikari</artifactId>
+      <!-- Connection pool; version managed by the Helidon BOM. -->
+      <groupId>com.zaxxer</groupId>
+      <artifactId>HikariCP</artifactId>
     </dependency>
     <dependency>
       <groupId>org.postgresql</groupId>

@@ -23,7 +23,8 @@ You never modify files.
    depends on `domain`; `domain` (including `domain/service`) depends on nothing but `common`. Flag any import that points outward:
    - anything in `domain` or `application` importing `io.helidon..`, a container API (`jakarta.inject..`,
      `jakarta.enterprise..`, `jakarta.ws.rs..`, `org.springframework..`), an ORM (`jakarta.persistence..`,
-     `javax.persistence..`, Hibernate and similar), Jackson, JSON-P/JSON-B (`jakarta.json..`) or any JSON library;
+     `javax.persistence..`, Hibernate and similar), JDBC (`java.sql..`, `javax.sql..`) or the connection pool
+     (`com.zaxxer.hikari..`), Jackson, JSON-P/JSON-B (`jakarta.json..`) or any JSON library;
    - anything in `domain` importing `application` or an adapter;
    - an `application` class importing an `adapter` class;
    - `common` importing `domain`, `application`, an adapter or a configuration class.
@@ -41,8 +42,11 @@ You never modify files.
    holds no domain logic spanning several aggregates (a pass-through, or one doing transactions or calling ports) is a
    finding. A use case that writes through several outgoing calls declares its transaction boundary
    through the outgoing port `TransactionRunner`; writes spread over several statements without it are a finding.
-   The persistence adapter implements it with `DbClient.transaction()` and must commit on success, roll back on failure,
-   and not let a failing `rollback()` hide the original exception (DbClient closes the connection when a statement fails).
+   The persistence adapter implements it on a JDBC connection of the Hikari pool (auto-commit off, connection bound to
+   the work so that every statement of the use case runs on it) and must commit on success, roll back on failure,
+   return the connection to the pool in every case, and not let a failing `rollback()` hide the original exception.
+   A `SQLException` rethrown as `IllegalArgumentException` is a finding (the web adapters turn that into a `400`).
+   Use of Helidon DbClient (`io.helidon.dbclient..`) instead of JDBC on the Hikari pool is an observation.
 5. **Input models.** Each use case has its own command / input model that validates itself on construction.
 6. **Rich domain and value objects** (rule "Rich domain model, immutable value objects" of the skill). Entities and
    aggregates in `domain` carry the behavior that changes their state and protect their invariants. Findings:
@@ -58,7 +62,8 @@ You never modify files.
    only is not anemic when it carries its behavior: do not report it.
 7. **Adapters.** `adapter/in/web` holds `*Controller` classes implementing `io.helidon.webserver.http.HttpService`
    and their web models; they call incoming ports only. `adapter/out/persistence` holds the persistence adapter, its SQL
-   and the `DbClientTransactionRunner`. Adapters do not depend on each other. Every adapter package exposes exactly one
+   and the `JdbcTransactionRunner`; SQL is run through `PreparedStatement`, and SQL built by concatenating input
+   values is a finding. Adapters do not depend on each other. Every adapter package exposes exactly one
    public class, `*AdapterConfiguration`, which creates the adapters and returns them typed as ports (or registers the
    controllers on `HttpRules`); every other top-level class of an adapter package is package-private.
    Domain objects are not serialized as JSON payloads or bound directly to SQL results unless the shortcut is documented.
@@ -85,7 +90,7 @@ You never modify files.
    the response status (Helidon's `WebClient` does not throw on 4xx/5xx) is a finding.
 11. **Common.** `<base>/common` holds utilities usable anywhere in the application. It must not depend on `domain`,
     `application`, `adapter` or `configuration`, and it is not shared with other applications. The one accepted
-    technical class is `common/persistence/DbTransactions` (shared DbClient and transaction of an application with
+    technical class is `common/persistence/DbTransactions` (shared Hikari pool and transaction of an application with
     several contexts): its use
     outside persistence adapters and configuration classes, in particular from `application`, is a violation.
 12. **Configuration and wiring.** There is no container. The single `<base>/configuration` package holds one file per
