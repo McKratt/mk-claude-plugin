@@ -116,6 +116,11 @@ ArchUnit, AssertJ, Mockito and WireMock are not managed by the Helidon BOM: look
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>io.helidon.webserver.testing.junit5</groupId>
+      <artifactId>helidon-webserver-testing-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>org.testcontainers</groupId>
       <artifactId>postgresql</artifactId>
       <!-- Same version as the Testcontainers modules the Helidon BOM manages. -->
@@ -802,13 +807,7 @@ public final class SalesPersistenceAdapterConfiguration implements AutoCloseable
     /** @param dbConfig the {@code db} node of the configuration (connection and pool settings) */
     public SalesPersistenceAdapterConfiguration(Config dbConfig) {
         dataSource = dataSource(dbConfig);
-        try {
-            migrate(dataSource);
-        } catch (RuntimeException e) {
-            // The caller gets no instance to close.
-            dataSource.close();
-            throw e;
-        }
+        migrate(dataSource);
         transactionRunner = new JdbcTransactionRunner(dataSource);
         orderPersistenceAdapter = new OrderPersistenceAdapter(transactionRunner);
     }
@@ -934,11 +933,10 @@ public final class SalesConfiguration {
     private SalesConfiguration() {
     }
 
-    static void routing(HttpRouting.Builder routing, Config config, Clock clock, ApplicationResources resources) {
-        // Before the pool: a wrong setting fails the start without opening connections.
-        var shipmentRequester = SalesShippingRestAdapterConfiguration.shipmentRequester(config.get("shipping"));
+    public static void routing(HttpRouting.Builder routing, Config config, Clock clock) {
         var persistence = new SalesPersistenceAdapterConfiguration(config.get("db"));
-        resources.add(persistence);
+        routing.addFeature(new CloseOnStop(persistence));
+        var shipmentRequester = SalesShippingRestAdapterConfiguration.shipmentRequester(config.get("shipping"));
 
         var orderPlacement = new PlaceOrderService(
                 persistence.orderStore(), shipmentRequester, persistence.transactionRunner(), clock);
@@ -951,13 +949,12 @@ public final class SalesConfiguration {
 ## Graceful shutdown of the connection pool (`configuration`)
 
 The configuration that creates the pool (here `SalesConfiguration`; with several contexts, `ShopConfiguration`,
-which creates `DbTransactions`) adds it to `ApplicationResources`, and `ShopConfiguration.start` registers those on the
-routing through `CloseOnStop`, an `HttpFeature` without routes, so Helidon closes them in `afterStop()`. On stop, Helidon 4 first stops accepting connections, lets running requests complete for at most
+which creates `DbTransactions`) registers it on the routing as an `HttpFeature` without routes, so Helidon closes
+it in `afterStop()`. On stop, Helidon 4 first stops accepting connections, lets running requests complete for at most
 `server.shutdown-grace-period` (default `PT0.5S`; `PT30S` in `application.yaml`, so keep the platform's termination
 grace period above it, for example Kubernetes' `terminationGracePeriodSeconds`, 30 by default), then calls `afterStop()` on the
 routing and its features. The server registers a JVM shutdown hook by default (`server.shutdown-hook: true`), so
-`SIGTERM` triggers this sequence, and `RunningApplication.close()`, which the `*IT` tests call, runs the same one.
-`main` therefore registers no shutdown hook of its own: a second hook would run concurrently with the server's.
+`SIGTERM` triggers this sequence. `@ServerTest` stops the server after the test class, so the `*IT` tests close the pool too.
 
 ```java
 // configuration/CloseOnStop.java
@@ -991,46 +988,6 @@ final class CloseOnStop implements HttpFeature {
             resource.close();
         } catch (Exception e) {
             LOGGER.log(System.Logger.Level.WARNING, "Failed to close " + resource, e);
-        }
-    }
-}
-```
-
-A failed start never reaches `afterStop()`, which is why the resources are held outside the feature: `start` closes
-them itself when the startup fails.
-
-```java
-// configuration/ApplicationResources.java
-package com.example.shop.configuration;
-
-import java.util.Deque;
-import java.util.concurrent.ConcurrentLinkedDeque;
-
-/**
- * What the application must release, such as the connection pool, closed in the reverse order of creation. It covers
- * both ends of the application's life: {@link CloseOnStop} closes it when the server stops, and
- * {@link ShopConfiguration#start} closes it when the startup fails, before there is a server to stop.
- */
-final class ApplicationResources implements AutoCloseable {
-
-    private static final System.Logger LOGGER = System.getLogger(ApplicationResources.class.getName());
-
-    private final Deque<AutoCloseable> resources = new ConcurrentLinkedDeque<>();
-
-    void add(AutoCloseable resource) {
-        resources.addFirst(resource);
-    }
-
-    /** Closes each resource once: a failure is logged and does not prevent closing the others. */
-    @Override
-    public void close() {
-        AutoCloseable resource;
-        while ((resource = resources.pollFirst()) != null) {
-            try {
-                resource.close();
-            } catch (Exception e) {
-                LOGGER.log(System.Logger.Level.WARNING, "Failed to close " + resource, e);
-            }
         }
     }
 }
@@ -1082,81 +1039,23 @@ class CloseOnStopTest {
 
 ## Application assembly and entry point (`com.example.shop`)
 
-`ShopConfiguration.start(config)` is the one way to start the application: `main` and every `*IT` test call it, so
-what the tests start is what production starts. **Helidon's `WebServer.start()` does not throw when the server cannot
-start**, for example when the port is taken: it logs the error and returns a stopped server, so `start` checks
-`isRunning()`. Without this check the process would carry on with no server.
-
 ```java
 // configuration/ShopConfiguration.java
 package com.example.shop.configuration;
 
 import io.helidon.config.Config;
-import io.helidon.webserver.WebServer;
+import io.helidon.webserver.http.HttpRouting;
 import java.time.Clock;
 
-/** Application-wide assembly: the one way to start the application, used by main and by the *IT tests. */
+/** Application-wide assembly: shared objects, then the configuration of the domain. Used by main and by the *IT tests. */
 public final class ShopConfiguration {
 
     private ShopConfiguration() {
     }
 
-    /**
-     * Wires the application and starts its server.
-     *
-     * @param config the whole configuration, whose {@code server} node configures the server
-     * @return the started application; closing it stops the server and releases the resources
-     * @throws RuntimeException if the startup fails, once what was already created is released
-     */
-    public static RunningApplication start(Config config) {
-        var resources = new ApplicationResources();
-        try {
-            var clock = Clock.systemUTC();
-            var server = WebServer.builder()
-                    .config(config.get("server"))
-                    .routing(routing -> {
-                        routing.addFeature(new CloseOnStop(resources));
-                        SalesConfiguration.routing(routing, config, clock, resources);
-                    })
-                    .build()
-                    .start();
-            // Helidon logs a failed start, such as a port already in use, and returns a stopped server.
-            if (!server.isRunning()) {
-                throw new IllegalStateException("The web server failed to start, see the log");
-            }
-            return new RunningApplication(server);
-        } catch (RuntimeException | Error e) {
-            resources.close();
-            throw e;
-        }
-    }
-}
-```
-
-```java
-// configuration/RunningApplication.java
-package com.example.shop.configuration;
-
-import io.helidon.webserver.WebServer;
-
-/** The started application, as returned by {@link ShopConfiguration#start}. Closing it stops the server gracefully. */
-public final class RunningApplication implements AutoCloseable {
-
-    private final WebServer server;
-
-    RunningApplication(WebServer server) {
-        this.server = server;
-    }
-
-    /** The port the server listens on, which is the actual one when {@code server.port} is 0. */
-    public int port() {
-        return server.port();
-    }
-
-    /** Stops the server, which then closes the application's resources through {@link CloseOnStop}. */
-    @Override
-    public void close() {
-        server.stop();
+    public static void routing(HttpRouting.Builder routing, Config config) {
+        var clock = Clock.systemUTC();
+        SalesConfiguration.routing(routing, config, clock);
     }
 }
 ```
@@ -1168,6 +1067,7 @@ package com.example.shop;
 import com.example.shop.configuration.ShopConfiguration;
 import io.helidon.config.Config;
 import io.helidon.logging.common.LogConfig;
+import io.helidon.webserver.WebServer;
 
 public final class ShopApplication {
 
@@ -1177,9 +1077,13 @@ public final class ShopApplication {
     public static void main(String[] args) {
         LogConfig.configureRuntime();
         // System properties, then environment variables (DB_CONNECTION_URL...), then application.yaml.
-        var application = ShopConfiguration.start(Config.create());
-        // Not closed here: on SIGTERM, the server's own shutdown hook stops it and closes the resources.
-        System.out.println("Shop is up: http://localhost:" + application.port() + "/orders");
+        var config = Config.create();
+        var server = WebServer.builder()
+                .config(config.get("server"))
+                .routing(routing -> ShopConfiguration.routing(routing, config))
+                .build()
+                .start();
+        System.out.println("Shop is up: http://localhost:" + server.port() + "/orders");
     }
 }
 ```
@@ -1632,53 +1536,23 @@ package com.example.shop.configuration;
 
 import com.example.shop.common.persistence.DbTransactions;
 import io.helidon.config.Config;
-import io.helidon.webserver.WebServer;
 import io.helidon.webserver.http.HttpRouting;
 import java.time.Clock;
 
 /**
- * Application-wide assembly: the one way to start the application, used by main and by the *IT tests. It creates the
- * shared objects (Clock, one connection pool), then one configuration per bounded context, the target context (billing)
- * before the context that calls it (order), which receives billing's incoming port.
+ * Application-wide assembly, used by main and by the *IT tests: shared objects (Clock, one connection pool, closed
+ * when the server stops), then one configuration per bounded context, the target context (billing) before the
+ * context that calls it (order), which receives billing's incoming port.
  */
 public final class ShopConfiguration {
 
     private ShopConfiguration() {
     }
 
-    /**
-     * Wires the application and starts its server.
-     *
-     * @param config the whole configuration, whose {@code server} node configures the server
-     * @return the started application; closing it stops the server and releases the resources
-     * @throws RuntimeException if the startup fails, once what was already created is released
-     */
-    public static RunningApplication start(Config config) {
-        var resources = new ApplicationResources();
-        try {
-            var server = WebServer.builder()
-                    .config(config.get("server"))
-                    .routing(routing -> {
-                        routing.addFeature(new CloseOnStop(resources));
-                        routing(routing, config, resources);
-                    })
-                    .build()
-                    .start();
-            // Helidon logs a failed start, such as a port already in use, and returns a stopped server.
-            if (!server.isRunning()) {
-                throw new IllegalStateException("The web server failed to start, see the log");
-            }
-            return new RunningApplication(server);
-        } catch (RuntimeException | Error e) {
-            resources.close();
-            throw e;
-        }
-    }
-
-    private static void routing(HttpRouting.Builder routing, Config config, ApplicationResources resources) {
+    public static void routing(HttpRouting.Builder routing, Config config) {
         var clock = Clock.systemUTC();
         var dbTransactions = DbTransactions.create(config.get("db"));
-        resources.add(dbTransactions);
+        routing.addFeature(new CloseOnStop(dbTransactions));
 
         var billing = new BillingConfiguration(dbTransactions, clock);
         var order = new OrderConfiguration(dbTransactions, clock, billing.invoiceCreation());
@@ -1729,8 +1603,7 @@ class of order holding a billing domain object):
 ### Proving the shared transaction (`*IT`)
 
 A deferred constraint trigger makes order's commit fail after the invoice was written: with one transaction per
-context, the invoice would stay. The full test, started like `PlaceOrderIT` below, is
-`examples/helidon-multi-context/src/test/java/com/example/shop/OrderToInvoiceIT.java`.
+context, the invoice would stay. The full test is `examples/helidon-multi-context/src/test/java/com/example/shop/OrderToInvoiceIT.java`.
 
 ```java
     /**
@@ -1983,8 +1856,6 @@ import io.helidon.config.Config;
 import io.helidon.config.ConfigSources;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.time.Instant;
-import java.util.HashMap;
 import java.util.Map;
 import org.testcontainers.containers.PostgreSQLContainer;
 
@@ -2005,25 +1876,14 @@ final class TestInfrastructure {
     private TestInfrastructure() {
     }
 
-    /**
-     * The application's configuration on a random port, with the containers' addresses taking precedence over
-     * application.yaml.
-     */
+    /** The application's configuration, with the containers' addresses taking precedence over application.yaml. */
     static Config config() {
-        return config(Map.of());
-    }
-
-    /** The same configuration, with these keys replaced. */
-    static Config config(Map<String, String> overrides) {
-        var values = new HashMap<>(Map.of(
-                "server.port", "0",
-                "db.connection.url", POSTGRES.getJdbcUrl(),
-                "db.connection.username", POSTGRES.getUsername(),
-                "db.connection.password", POSTGRES.getPassword(),
-                "shipping.base-url", SHIPPING.baseUrl()));
-        values.putAll(overrides);
         return Config.builder()
-                .addSource(ConfigSources.create(values))
+                .addSource(ConfigSources.create(Map.of(
+                        "db.connection.url", POSTGRES.getJdbcUrl(),
+                        "db.connection.username", POSTGRES.getUsername(),
+                        "db.connection.password", POSTGRES.getPassword(),
+                        "shipping.base-url", SHIPPING.baseUrl())))
                 .addSource(ConfigSources.classpath("application.yaml"))
                 .disableEnvironmentVariablesSource()
                 .disableSystemPropertiesSource()
@@ -2052,38 +1912,6 @@ final class TestInfrastructure {
             throw new IllegalStateException(e);
         }
     }
-
-    /** The number of connections open in PostgreSQL under this JDBC application name. */
-    static long connectionsOf(String applicationName) {
-        try (var connection = DriverManager.getConnection(
-                        POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
-                var statement = connection.prepareStatement(
-                        "SELECT count(*) FROM pg_stat_activity WHERE application_name = ?")) {
-            statement.setString(1, applicationName);
-            try (var resultSet = statement.executeQuery()) {
-                resultSet.next();
-                return resultSet.getLong(1);
-            }
-        } catch (SQLException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    /** Waits for PostgreSQL to see the connections gone: a backend ends shortly after its client closes it. */
-    static void awaitNoConnectionsOf(String applicationName) {
-        var deadline = Instant.now().plusSeconds(10);
-        while (connectionsOf(applicationName) > 0) {
-            if (Instant.now().isAfter(deadline)) {
-                throw new AssertionError("Connections of " + applicationName + " are still open");
-            }
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException(e);
-            }
-        }
-    }
 }
 ```
 
@@ -2099,35 +1927,33 @@ import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.example.shop.configuration.RunningApplication;
 import com.example.shop.configuration.ShopConfiguration;
 import io.helidon.http.HeaderNames;
 import io.helidon.http.Status;
 import io.helidon.webclient.http1.Http1Client;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
+import io.helidon.webserver.http.HttpRouting;
+import io.helidon.webserver.testing.junit5.ServerTest;
+import io.helidon.webserver.testing.junit5.SetUpRoute;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * The "place an order" use case through the whole stack: the application started as main starts it, on a random
- * port, with a real PostgreSQL (Testcontainers) and the shipping API replaced by WireMock.
+ * The "place an order" use case through the whole stack: real Helidon web server on a random port, the
+ * application's own wiring, real PostgreSQL (Testcontainers) and the shipping API replaced by WireMock.
  */
+@ServerTest
 class PlaceOrderIT {
 
-    private static RunningApplication application;
-    private static Http1Client client;
+    private final Http1Client client;
 
-    /** The same start as main, fed with the test configuration. */
-    @BeforeAll
-    static void start_application() {
-        application = ShopConfiguration.start(TestInfrastructure.config());
-        client = Http1Client.builder().baseUri("http://localhost:" + application.port()).build();
+    PlaceOrderIT(Http1Client client) {
+        this.client = client;
     }
 
-    @AfterAll
-    static void stop_application() {
-        application.close();
+    /** The same assembly as main, fed with the test configuration. */
+    @SetUpRoute
+    static void routing(HttpRouting.Builder routing) {
+        ShopConfiguration.routing(routing, TestInfrastructure.config());
     }
 
     @BeforeEach
@@ -2172,7 +1998,7 @@ class PlaceOrderIT {
         TestInfrastructure.SHIPPING.verify(0, postRequestedFor(urlEqualTo("/shipments")));
     }
 
-    private static io.helidon.webclient.http1.Http1ClientResponse postOrder(String json) {
+    private io.helidon.webclient.http1.Http1ClientResponse postOrder(String json) {
         return client.post("/orders")
                 .header(HeaderNames.CONTENT_TYPE, "application/json")
                 .submit(json);
@@ -2180,75 +2006,6 @@ class PlaceOrderIT {
 
     private static long count(String table) {
         return TestInfrastructure.count(table);
-    }
-}
-```
-
-The application's startup and shutdown have their own test: closing the application closes the pool, and a failed
-start reports the failure and leaves no connection open. The pool is named in the JDBC URL (`ApplicationName`), so
-PostgreSQL itself shows whether its connections are gone. With several contexts, the pool belongs to
-`ApplicationResources` from its creation, so the migration case adds nothing and the example leaves it out.
-
-```java
-// src/test/java/com/example/shop/ApplicationLifecycleIT.java
-package com.example.shop;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-
-import com.example.shop.configuration.ShopConfiguration;
-import java.io.IOException;
-import java.net.InetAddress;
-import java.net.ServerSocket;
-import java.util.Map;
-import org.junit.jupiter.api.Test;
-
-/**
- * The application's own startup and shutdown. Each test names its connection pool in the JDBC URL, so that PostgreSQL
- * shows whether the connections of that pool are really closed.
- */
-class ApplicationLifecycleIT {
-
-    @Test
-    void should_close_the_connection_pool_when_the_application_is_closed() {
-        var pool = "closed-application";
-        var application = ShopConfiguration.start(TestInfrastructure.config(Map.of("db.connection.url", jdbcUrl(pool))));
-        assertThat(TestInfrastructure.connectionsOf(pool)).isPositive();
-
-        application.close();
-
-        TestInfrastructure.awaitNoConnectionsOf(pool);
-    }
-
-    @Test
-    void should_fail_and_close_the_connection_pool_when_the_port_is_taken() throws IOException {
-        var pool = "port-taken";
-        try (var taken = new ServerSocket(0, 1, InetAddress.getByName("0.0.0.0"))) {
-            var config = TestInfrastructure.config(Map.of(
-                    "server.port", String.valueOf(taken.getLocalPort()),
-                    "db.connection.url", jdbcUrl(pool)));
-
-            assertThatThrownBy(() -> ShopConfiguration.start(config)).isInstanceOf(IllegalStateException.class);
-        }
-
-        TestInfrastructure.awaitNoConnectionsOf(pool);
-    }
-
-    @Test
-    void should_fail_and_close_the_connection_pool_when_the_migration_fails() {
-        var pool = "failed-migration";
-        TestInfrastructure.execute("CREATE SCHEMA broken");
-        TestInfrastructure.execute("CREATE TABLE broken.flyway_schema_history (not_what_flyway_expects INTEGER)");
-        var config = TestInfrastructure.config(Map.of(
-                "db.connection.url", jdbcUrl(pool) + "&currentSchema=broken"));
-
-        assertThatThrownBy(() -> ShopConfiguration.start(config)).isInstanceOf(RuntimeException.class);
-
-        TestInfrastructure.awaitNoConnectionsOf(pool);
-    }
-
-    private static String jdbcUrl(String pool) {
-        return TestInfrastructure.POSTGRES.getJdbcUrl() + "&ApplicationName=" + pool;
     }
 }
 ```

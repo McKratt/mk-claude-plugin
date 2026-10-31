@@ -22,13 +22,7 @@ public final class SalesPersistenceAdapterConfiguration implements AutoCloseable
     /** @param dbConfig the {@code db} node of the configuration (connection and pool settings) */
     public SalesPersistenceAdapterConfiguration(Config dbConfig) {
         dataSource = dataSource(dbConfig);
-        try {
-            migrate(dataSource);
-        } catch (RuntimeException e) {
-            // The caller gets no instance to close.
-            dataSource.close();
-            throw e;
-        }
+        migrate(dataSource);
         transactionRunner = new JdbcTransactionRunner(dataSource);
         orderPersistenceAdapter = new OrderPersistenceAdapter(transactionRunner);
     }

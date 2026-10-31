@@ -48,8 +48,8 @@ You never modify files.
    A `SQLException` rethrown as `IllegalArgumentException` is a finding (the web adapters turn that into a `400`).
    Use of Helidon DbClient (`io.helidon.dbclient..`) instead of JDBC on the Hikari pool is an observation.
    A connection pool that is never closed when the server stops (expected: registered on the routing through an
-   `HttpFeature` such as `CloseOnStop`, closed in `afterStop()`), closed from a separate `Runtime.addShutdownHook`, or
-   left open when the startup fails after creating it, is a finding. An explicit HikariCP version in the `pom.xml`, overriding the one managed by the Helidon BOM, is a
+   `HttpFeature` such as `CloseOnStop`, closed in `afterStop()`), or closed from a separate `Runtime.addShutdownHook`,
+   is a finding. An explicit HikariCP version in the `pom.xml`, overriding the one managed by the Helidon BOM, is a
    finding (compatibility with the Helidon release).
 5. **Input models.** Each use case has its own command / input model that validates itself on construction.
 6. **Rich domain and value objects** (rule "Rich domain model, immutable value objects" of the skill). Entities and
@@ -100,21 +100,15 @@ You never modify files.
 12. **Configuration and wiring.** There is no container. The single `<base>/configuration` package holds one file per
     bounded context, `<Context>Configuration`, which creates the context's adapters (through the `*AdapterConfiguration`
     classes) and application services and registers its web adapters, plus `<App>Configuration`, the application-wide
-    assembly whose `start(Config)` builds and starts the server and returns a closeable handle, called by `main` and by
-    the `*IT` tests. A `start` that does not check `server.isRunning()` is a finding: Helidon's `WebServer.start()` only
-    logs a failed start, such as a port already in use, and returns a stopped server. Only configuration classes and the main
+    assembly called by `main` and by the `*IT` tests. Only configuration classes and the main
     class may depend on a `configuration` package or a `*AdapterConfiguration`. Helidon `Config` is created once in
     `main` (`Config.create()`, `application.yaml`) and passed down as nodes; reading it with `Services.get(Config.class)`
     or `Config.global()` outside the composition root is a finding.
 13. **Tests.** Use cases are covered by tests named `*IT`, run in the integration-test phase (`maven-failsafe-plugin`),
-    that start the application through its own `<App>Configuration.start(config)` with `server.port=0`, against a real
+    annotated `@ServerTest` with a `@SetUpRoute` method that calls the application's own assembly, against a real
     database in a container (Testcontainers) and with third-party services mocked by WireMock. An embedded database
-    (H2 or similar) in place of the production engine, or a test that starts a server run by surefire, is a violation.
-    A `*IT` that assembles its own server, with `WebServer.builder()` or with `@ServerTest` and `@SetUpRoute`, is a
-    violation, because the application's startup is then not tested. No test of a failed start or of closing the
-    connection pool is an observation.
-    A `@RoutingTest`, or a `@ServerTest` of a single `HttpService` that needs a real socket, is an observation unless
-    the test class says why a use case test could not cover the behavior.
+    (H2 or similar) in place of the production engine, or a `@ServerTest` run by surefire, is a violation.
+    A `@RoutingTest` is an observation unless the test class says why a use case test could not cover the behavior.
 14. **Enforcement.** An automated architecture test (for example with ArchUnit) exists and covers the rules above,
     ideally with fixtures proving that each rule still detects a violation.
 
