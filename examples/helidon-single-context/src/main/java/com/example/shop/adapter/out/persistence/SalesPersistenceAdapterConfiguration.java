@@ -10,16 +10,18 @@ import org.flywaydb.core.Flyway;
 
 /**
  * The only public class of the package: it creates the Hikari connection pool and the persistence adapters,
- * which stay package-private, and hands them out as ports. Used only by the domain's configuration class.
+ * which stay package-private, and hands them out as ports. Used only by the domain's configuration class, which
+ * closes it when the server stops.
  */
-public final class SalesPersistenceAdapterConfiguration {
+public final class SalesPersistenceAdapterConfiguration implements AutoCloseable {
 
+    private final HikariDataSource dataSource;
     private final JdbcTransactionRunner transactionRunner;
     private final OrderPersistenceAdapter orderPersistenceAdapter;
 
     /** @param dbConfig the {@code db} node of the configuration (connection and pool settings) */
     public SalesPersistenceAdapterConfiguration(Config dbConfig) {
-        var dataSource = dataSource(dbConfig);
+        dataSource = dataSource(dbConfig);
         migrate(dataSource);
         transactionRunner = new JdbcTransactionRunner(dataSource);
         orderPersistenceAdapter = new OrderPersistenceAdapter(transactionRunner);
@@ -31,6 +33,12 @@ public final class SalesPersistenceAdapterConfiguration {
 
     public TransactionRunner transactionRunner() {
         return transactionRunner;
+    }
+
+    /** Closes the connection pool. */
+    @Override
+    public void close() {
+        dataSource.close();
     }
 
     private static HikariDataSource dataSource(Config dbConfig) {

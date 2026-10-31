@@ -250,6 +250,8 @@ Helidon Config reads system properties, then environment variables, then `applic
 server:
   port: 8080
   host: 0.0.0.0
+  # Graceful shutdown: running requests get up to 5 seconds to complete before the connection pool is closed.
+  shutdown-grace-period: PT5S
 
 # Plain JDBC through a HikariCP connection pool. Environment variables override these keys, for example
 # DB_CONNECTION_URL.
@@ -793,16 +795,18 @@ import org.flywaydb.core.Flyway;
 
 /**
  * The only public class of the package: it creates the Hikari connection pool and the persistence adapters,
- * which stay package-private, and hands them out as ports. Used only by the domain's configuration class.
+ * which stay package-private, and hands them out as ports. Used only by the domain's configuration class, which
+ * closes it when the server stops.
  */
-public final class SalesPersistenceAdapterConfiguration {
+public final class SalesPersistenceAdapterConfiguration implements AutoCloseable {
 
+    private final HikariDataSource dataSource;
     private final JdbcTransactionRunner transactionRunner;
     private final OrderPersistenceAdapter orderPersistenceAdapter;
 
     /** @param dbConfig the {@code db} node of the configuration (connection and pool settings) */
     public SalesPersistenceAdapterConfiguration(Config dbConfig) {
-        var dataSource = dataSource(dbConfig);
+        dataSource = dataSource(dbConfig);
         migrate(dataSource);
         transactionRunner = new JdbcTransactionRunner(dataSource);
         orderPersistenceAdapter = new OrderPersistenceAdapter(transactionRunner);
@@ -814,6 +818,12 @@ public final class SalesPersistenceAdapterConfiguration {
 
     public TransactionRunner transactionRunner() {
         return transactionRunner;
+    }
+
+    /** Closes the connection pool. */
+    @Override
+    public void close() {
+        dataSource.close();
     }
 
     private static HikariDataSource dataSource(Config dbConfig) {
@@ -911,23 +921,117 @@ import com.example.shop.adapter.out.persistence.SalesPersistenceAdapterConfigura
 import com.example.shop.adapter.out.shipping.SalesShippingRestAdapterConfiguration;
 import com.example.shop.application.service.PlaceOrderService;
 import io.helidon.config.Config;
-import io.helidon.webserver.http.HttpRules;
+import io.helidon.webserver.http.HttpRouting;
 import java.time.Clock;
 
-/** Wiring of the sales domain: outgoing adapters, then services, then incoming adapters. No container. */
+/**
+ * Wiring of the sales domain: outgoing adapters, then services, then incoming adapters. No container. The connection
+ * pool is closed when the server stops.
+ */
 public final class SalesConfiguration {
 
     private SalesConfiguration() {
     }
 
-    public static void routing(HttpRules rules, Config config, Clock clock) {
+    public static void routing(HttpRouting.Builder routing, Config config, Clock clock) {
         var persistence = new SalesPersistenceAdapterConfiguration(config.get("db"));
+        routing.addFeature(new CloseOnStop(persistence));
         var shipmentRequester = SalesShippingRestAdapterConfiguration.shipmentRequester(config.get("shipping"));
 
         var orderPlacement = new PlaceOrderService(
                 persistence.orderStore(), shipmentRequester, persistence.transactionRunner(), clock);
 
-        SalesWebAdapterConfiguration.routing(rules, orderPlacement);
+        SalesWebAdapterConfiguration.routing(routing, orderPlacement);
+    }
+}
+```
+
+## Graceful shutdown of the connection pool (`configuration`)
+
+The configuration that creates the pool (here `SalesConfiguration`; with several contexts, `ShopConfiguration`,
+which creates `DbTransactions`) registers it on the routing as an `HttpFeature` without routes, so Helidon closes
+it in `afterStop()`. On stop, Helidon 4 first stops accepting connections, lets running requests complete for at most
+`server.shutdown-grace-period` (default `PT0.5S`; `PT5S` in `application.yaml`), then calls `afterStop()` on the
+routing and its features. The server registers a JVM shutdown hook by default (`server.shutdown-hook: true`), so
+`SIGTERM` triggers this sequence. `@ServerTest` stops the server after the test class, so the `*IT` tests close the pool too.
+
+```java
+// configuration/CloseOnStop.java
+package com.example.shop.configuration;
+
+import io.helidon.webserver.http.HttpFeature;
+import io.helidon.webserver.http.HttpRouting;
+import lombok.RequiredArgsConstructor;
+
+/**
+ * Closes a resource, such as the connection pool, when the web server stops gracefully. Helidon calls
+ * {@link #afterStop()} once the server accepts no more connections and the running requests have completed or the
+ * shutdown grace period ({@code server.shutdown-grace-period}) has elapsed. The server's shutdown hook, on by
+ * default, stops it when the JVM exits.
+ */
+@RequiredArgsConstructor
+final class CloseOnStop implements HttpFeature {
+
+    private static final System.Logger LOGGER = System.getLogger(CloseOnStop.class.getName());
+
+    private final AutoCloseable resource;
+
+    @Override
+    public void setup(HttpRouting.Builder routing) {
+        // No route: the feature only takes part in the server's lifecycle.
+    }
+
+    @Override
+    public void afterStop() {
+        try {
+            resource.close();
+        } catch (Exception e) {
+            LOGGER.log(System.Logger.Level.WARNING, "Failed to close " + resource, e);
+        }
+    }
+}
+```
+
+The lifecycle is checked against a real `WebServer` (no database needed, run by surefire):
+
+```java
+// src/test/java/com/example/shop/configuration/CloseOnStopTest.java
+package com.example.shop.configuration;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import io.helidon.config.Config;
+import io.helidon.config.ConfigSources;
+import io.helidon.webserver.WebServer;
+import io.helidon.webserver.WebServerConfig;
+import java.time.Duration;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.junit.jupiter.api.Test;
+
+class CloseOnStopTest {
+
+    @Test
+    void should_close_the_resource_when_the_server_stops() {
+        var closed = new AtomicBoolean();
+        var server = WebServer.builder()
+                .port(0)
+                .routing(routing -> routing.addFeature(new CloseOnStop(() -> closed.set(true))))
+                .build()
+                .start();
+        assertThat(closed).isFalse();
+
+        server.stop();
+
+        assertThat(closed).isTrue();
+    }
+
+    @Test
+    void should_let_running_requests_complete_for_the_configured_grace_period() {
+        var config = Config.just(ConfigSources.classpath("application.yaml"));
+
+        var serverConfig = WebServerConfig.create(config.get("server"));
+
+        assertThat(serverConfig.shutdownGracePeriod()).isEqualTo(Duration.ofSeconds(5));
     }
 }
 ```
@@ -1072,14 +1176,15 @@ import javax.sql.DataSource;
  * One Hikari connection pool for the whole application, with the connection of the open transaction bound to the
  * work through a {@link ScopedValue}. The persistence adapters of every bounded context run their statements
  * through {@link #run} and {@link #call}, so a use case of one context that calls another context through a
- * DomainAdapter keeps a single transaction. Only persistence adapters and configuration classes may use it.
+ * DomainAdapter keeps a single transaction. Only persistence adapters and configuration classes may use it; the
+ * application's configuration closes it when the server stops.
  */
-public final class DbTransactions {
+public final class DbTransactions implements AutoCloseable {
 
-    private final DataSource dataSource;
+    private final HikariDataSource dataSource;
     private final ScopedValue<Connection> current = ScopedValue.newInstance();
 
-    private DbTransactions(DataSource dataSource) {
+    private DbTransactions(HikariDataSource dataSource) {
         this.dataSource = dataSource;
     }
 
@@ -1141,6 +1246,12 @@ public final class DbTransactions {
             statements.accept(connection);
             return null;
         });
+    }
+
+    /** Closes the connection pool. */
+    @Override
+    public void close() {
+        dataSource.close();
     }
 
     private static void rollback(Connection connection, Throwable failure) {
@@ -1428,9 +1539,9 @@ import io.helidon.webserver.http.HttpRouting;
 import java.time.Clock;
 
 /**
- * Application-wide assembly, used by main and by the *IT tests: shared objects (Clock, one connection pool), then one
- * configuration per bounded context, the target context (billing) before the context that calls it (order),
- * which receives billing's incoming port.
+ * Application-wide assembly, used by main and by the *IT tests: shared objects (Clock, one connection pool, closed
+ * when the server stops), then one configuration per bounded context, the target context (billing) before the
+ * context that calls it (order), which receives billing's incoming port.
  */
 public final class ShopConfiguration {
 
@@ -1440,6 +1551,7 @@ public final class ShopConfiguration {
     public static void routing(HttpRouting.Builder routing, Config config) {
         var clock = Clock.systemUTC();
         var dbTransactions = DbTransactions.create(config.get("db"));
+        routing.addFeature(new CloseOnStop(dbTransactions));
 
         var billing = new BillingConfiguration(dbTransactions, clock);
         var order = new OrderConfiguration(dbTransactions, clock, billing.invoiceCreation());
