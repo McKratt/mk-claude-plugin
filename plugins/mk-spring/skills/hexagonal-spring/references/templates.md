@@ -719,9 +719,10 @@ context (`OrderConfiguration`, `BillingConfiguration`).
 
 ## Graceful shutdown (`application.yaml`)
 
-Graceful is already the Spring Boot 4 default: state it anyway, with a timeout that fits the platform's termination
-grace period (in Kubernetes, the Pod field `terminationGracePeriodSeconds`, 30 by default, after which `SIGTERM` is
-followed by `SIGKILL`; Spring's timeout also defaults to 30s, per shutdown phase).
+Graceful is already the Spring Boot 4 default: state it anyway, with its timeout (30s, Spring's default, applied per
+shutdown phase). Keep the platform's termination grace period above it: in Kubernetes, the Pod field
+`terminationGracePeriodSeconds` (30 by default) is the delay between `SIGTERM` and `SIGKILL`, so raise it (for
+example to 45) when the application keeps 30s.
 The Hikari pool is a bean: the context closes it after the web server has drained the running requests.
 
 ```yaml
@@ -733,7 +734,7 @@ server:
 
 spring:
   lifecycle:
-    timeout-per-shutdown-phase: 5s
+    timeout-per-shutdown-phase: 30s
 ```
 
 The test starts the application itself, because it closes the context: closing the cached context of the other
@@ -767,7 +768,7 @@ class GracefulShutdownIT {
         var dataSource = context.getBean(HikariDataSource.class);
         assertThat(context.getBean(ServerProperties.class).getShutdown()).isEqualTo(Shutdown.GRACEFUL);
         assertThat(context.getBean(LifecycleProperties.class).getTimeoutPerShutdownPhase())
-                .isEqualTo(Duration.ofSeconds(5));
+                .isEqualTo(Duration.ofSeconds(30));
         assertThat(dataSource.isClosed()).isFalse();
 
         context.close();

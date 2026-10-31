@@ -33,6 +33,6 @@ class CloseOnStopTest {
 
         var serverConfig = WebServerConfig.create(config.get("server"));
 
-        assertThat(serverConfig.shutdownGracePeriod()).isEqualTo(Duration.ofSeconds(5));
+        assertThat(serverConfig.shutdownGracePeriod()).isEqualTo(Duration.ofSeconds(30));
     }
 }

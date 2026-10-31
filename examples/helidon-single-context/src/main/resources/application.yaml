@@ -1,8 +1,8 @@
 server:
   port: 8080
   host: 0.0.0.0
-  # Graceful shutdown: running requests get up to 5 seconds to complete before the connection pool is closed.
-  shutdown-grace-period: PT5S
+  # Graceful shutdown: running requests get up to 30 seconds to complete before the connection pool is closed.
+  shutdown-grace-period: PT30S
 
 # Plain JDBC through a HikariCP connection pool. Environment variables override these keys, for example
 # DB_CONNECTION_URL.

@@ -250,8 +250,8 @@ Helidon Config reads system properties, then environment variables, then `applic
 server:
   port: 8080
   host: 0.0.0.0
-  # Graceful shutdown: running requests get up to 5 seconds to complete before the connection pool is closed.
-  shutdown-grace-period: PT5S
+  # Graceful shutdown: running requests get up to 30 seconds to complete before the connection pool is closed.
+  shutdown-grace-period: PT30S
 
 # Plain JDBC through a HikariCP connection pool. Environment variables override these keys, for example
 # DB_CONNECTION_URL.
@@ -951,7 +951,8 @@ public final class SalesConfiguration {
 The configuration that creates the pool (here `SalesConfiguration`; with several contexts, `ShopConfiguration`,
 which creates `DbTransactions`) registers it on the routing as an `HttpFeature` without routes, so Helidon closes
 it in `afterStop()`. On stop, Helidon 4 first stops accepting connections, lets running requests complete for at most
-`server.shutdown-grace-period` (default `PT0.5S`; `PT5S` in `application.yaml`), then calls `afterStop()` on the
+`server.shutdown-grace-period` (default `PT0.5S`; `PT30S` in `application.yaml`, so keep the platform's termination
+grace period above it, for example Kubernetes' `terminationGracePeriodSeconds`, 30 by default), then calls `afterStop()` on the
 routing and its features. The server registers a JVM shutdown hook by default (`server.shutdown-hook: true`), so
 `SIGTERM` triggers this sequence. `@ServerTest` stops the server after the test class, so the `*IT` tests close the pool too.
 
@@ -1031,7 +1032,7 @@ class CloseOnStopTest {
 
         var serverConfig = WebServerConfig.create(config.get("server"));
 
-        assertThat(serverConfig.shutdownGracePeriod()).isEqualTo(Duration.ofSeconds(5));
+        assertThat(serverConfig.shutdownGracePeriod()).isEqualTo(Duration.ofSeconds(30));
     }
 }
 ```
