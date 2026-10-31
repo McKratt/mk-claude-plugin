@@ -96,7 +96,7 @@ Each plugin follows [Semantic Versioning](https://semver.org/). Its version live
 - **MINOR**: new skill or agent, backwards-compatible
 - **PATCH**: backwards-compatible fixes and wording improvements
 
-Current versions: `mk-java` `0.0.5`, `mk-spring` `0.0.5`, `mk-helidon` `0.0.6` (initial development, anything may change;
+Current versions: `mk-java` `0.0.5`, `mk-spring` `0.0.6`, `mk-helidon` `0.0.6` (initial development, anything may change;
 they continue the numbering of the former single plugin `mk-claude-plugin`, last at `0.0.4`).
 
 ## References

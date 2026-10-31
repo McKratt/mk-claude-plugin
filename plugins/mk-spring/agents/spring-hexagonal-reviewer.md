@@ -78,7 +78,11 @@ You never modify files.
 11. **Configuration.** The single `<base>/configuration` package holds one file per bounded context
    (`<Context>Configuration`, with the `@Bean` methods of its application services) and the general Spring Java config
    (`Clock`, security, web...). Adapters are created by the `*AdapterConfiguration` class of their own adapter package.
-   Nothing may depend on a `@Configuration` class.
+   Nothing may depend on a `@Configuration` class. `application.yaml` states the graceful shutdown
+   (`server.shutdown: graceful`, `spring.lifecycle.timeout-per-shutdown-phase`); its absence is an observation (graceful
+   is the Spring Boot 4 default), `server.shutdown: immediate` without a stated reason is a finding. The connection pool
+   is a Spring bean closed by the context: closing it by hand (`Runtime.addShutdownHook`, `@PreDestroy`) or disabling
+   its destroy method (`destroyMethod = ""`) is a finding.
 12. **Tests** (see the `java-testing` skill of the `mk-java` plugin and `spring-testing` of this plugin). Use cases are covered by `@SpringBootTest` tests named `*IT`
    that run in the integration-test phase (`maven-failsafe-plugin`), with a real database in a container (Testcontainers)
    and third-party services mocked by WireMock. An embedded database (H2 or similar) in place of the production engine,

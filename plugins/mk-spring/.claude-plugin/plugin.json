@@ -1,7 +1,7 @@
 {
   "name": "mk-spring",
   "description": "Spring Boot skills and agent: hexagonal architecture (first-edition layout of Get Your Hands Dirty on Clean Architecture), Spring testing, architecture reviewer",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "author": {
     "name": "McKratt"
   },

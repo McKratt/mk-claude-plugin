@@ -1,4 +1,12 @@
+# Graceful shutdown (already the Spring Boot 4 default, stated explicitly): on SIGTERM the server stops accepting
+# requests and lets running ones complete for at most the lifecycle timeout; the context then closes its beans,
+# the Hikari pool among them.
+server:
+  shutdown: graceful
+
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 5s
   application:
     name: shop-single-context
   datasource:

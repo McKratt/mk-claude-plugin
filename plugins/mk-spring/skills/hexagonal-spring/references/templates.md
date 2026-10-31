@@ -717,6 +717,66 @@ class ClockConfiguration {
 Place other general `@Configuration` classes here (web, security, serialization), next to the one file per bounded
 context (`OrderConfiguration`, `BillingConfiguration`).
 
+## Graceful shutdown (`application.yaml`)
+
+Graceful is already the Spring Boot 4 default: state it anyway, with a timeout that fits the platform's termination
+grace period (in Kubernetes, the Pod field `terminationGracePeriodSeconds`, 30 by default, after which `SIGTERM` is
+followed by `SIGKILL`; Spring's timeout also defaults to 30s, per shutdown phase).
+The Hikari pool is a bean: the context closes it after the web server has drained the running requests.
+
+```yaml
+# Graceful shutdown (already the Spring Boot 4 default, stated explicitly): on SIGTERM the server stops accepting
+# requests and lets running ones complete for at most the lifecycle timeout; the context then closes its beans,
+# the Hikari pool among them.
+server:
+  shutdown: graceful
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 5s
+```
+
+The test starts the application itself, because it closes the context: closing the cached context of the other
+`*IT` tests breaks the Spring TestContext framework ("LifecycleProcessor not initialized").
+
+```java
+package com.example.shop;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.zaxxer.hikari.HikariDataSource;
+import java.time.Duration;
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.autoconfigure.context.LifecycleProperties;
+import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.boot.web.server.Shutdown;
+import org.springframework.boot.web.server.autoconfigure.ServerProperties;
+
+/**
+ * Starts the application as main does (real web server on a random port, PostgreSQL in a container), then stops
+ * it: the web server shuts down gracefully, then the context closes its beans, the Hikari pool among them. The
+ * test owns this context instead of sharing the cached one of the other *IT tests, since it closes it.
+ */
+class GracefulShutdownIT {
+
+    @Test
+    void should_shut_down_gracefully_and_close_the_connection_pool_when_the_application_stops() {
+        var context = new SpringApplicationBuilder(ShopApplication.class, PostgresTestConfiguration.class)
+                .properties("server.port=0")
+                .run();
+        var dataSource = context.getBean(HikariDataSource.class);
+        assertThat(context.getBean(ServerProperties.class).getShutdown()).isEqualTo(Shutdown.GRACEFUL);
+        assertThat(context.getBean(LifecycleProperties.class).getTimeoutPerShutdownPhase())
+                .isEqualTo(Duration.ofSeconds(5));
+        assertThat(dataSource.isClosed()).isFalse();
+
+        context.close();
+
+        assertThat(dataSource.isClosed()).isTrue();
+    }
+}
+```
+
 ## Use case integration test (`*IT`)
 
 Priority test type; the `java-testing` skill (`mk-java` plugin) has the general rules and `spring-testing` (this plugin) the Spring mechanics. Build setup (Maven):
