@@ -12,14 +12,15 @@ import javax.sql.DataSource;
  * One Hikari connection pool for the whole application, with the connection of the open transaction bound to the
  * work through a {@link ScopedValue}. The persistence adapters of every bounded context run their statements
  * through {@link #run} and {@link #call}, so a use case of one context that calls another context through a
- * DomainAdapter keeps a single transaction. Only persistence adapters and configuration classes may use it.
+ * DomainAdapter keeps a single transaction. Only persistence adapters and configuration classes may use it; the
+ * application's configuration closes it when the server stops.
  */
-public final class DbTransactions {
+public final class DbTransactions implements AutoCloseable {
 
-    private final DataSource dataSource;
+    private final HikariDataSource dataSource;
     private final ScopedValue<Connection> current = ScopedValue.newInstance();
 
-    private DbTransactions(DataSource dataSource) {
+    private DbTransactions(HikariDataSource dataSource) {
         this.dataSource = dataSource;
     }
 
@@ -81,6 +82,12 @@ public final class DbTransactions {
             statements.accept(connection);
             return null;
         });
+    }
+
+    /** Closes the connection pool. */
+    @Override
+    public void close() {
+        dataSource.close();
     }
 
     private static void rollback(Connection connection, Throwable failure) {

@@ -164,18 +164,22 @@ main class may depend on them.
     persistence adapters and configuration classes may use it, never `application` (enforced by ArchUnit). This is a
     conscious shortcut of this skill: without it, two package-private transaction runners could not share a transaction.
 11. **Wiring of a bounded context.** Its file `configuration/<Context>Configuration` is a `public final` class: with a
-    single context, a static method (for example `routing(HttpRules rules, Config config, Clock clock)`); with several,
+    single context, a static method (for example `routing(HttpRouting.Builder routing, Config config, Clock clock)`); with several,
     an instance class (rule 8). In this order, it creates the outgoing adapters through their `*AdapterConfiguration`
     (passing the relevant `Config` node, such as `config.get("db")`), creates the application services with `new`, and
     registers the web adapters through the web `*AdapterConfiguration`. `configuration/<App>Configuration` creates the
     shared objects and calls each context's configuration; it is called by `main` and by the `*IT` tests, so the tests
-    run the real wiring.
+    run the real wiring. The configuration that creates the connection pool (the context's with a single context,
+    `<App>Configuration` with `DbTransactions`) registers it with `routing.addFeature(new CloseOnStop(pool))` for the
+    graceful shutdown (rule 13).
 12. **Configuration** is Helidon Config in `src/main/resources/application.yaml` (dependency `helidon-config-yaml`),
     created once in `main` with `Config.create()` and passed down explicitly as `Config` nodes. Do not read it from
     adapters or services through `Services.get(Config.class)` or `Config.global()`. Environment variables override keys
     (`DB_CONNECTION_URL` overrides `db.connection.url`).
-13. **Persistence with JDBC and a Hikari pool.** `com.zaxxer:HikariCP` (version managed by the Helidon BOM) and the
-    JDBC driver; no Helidon DbClient. The `db` config node holds `connection` (`url`, `username`, `password`) and `pool`
+13. **Persistence with JDBC and a Hikari pool.** `com.zaxxer:HikariCP` and the JDBC driver; no Helidon DbClient.
+    **Never set the HikariCP version**: keep the one managed by the Helidon BOM (5.0.1 in 4.5.6), the version Helidon's
+    own Hikari modules are built with (`helidon-dbclient-hikari`, `helidon-integrations-cdi-datasource-hikaricp`...),
+    so the pool stays compatible with the Helidon release and moves with it on each Helidon upgrade. The `db` config node holds `connection` (`url`, `username`, `password`) and `pool`
     (`maximum-pool-size`), mapped explicitly onto a `HikariConfig` by the persistence adapter configuration, which
     creates the `HikariDataSource`. The adapter owns its SQL and uses `PreparedStatement` (never string concatenation).
     `JdbcTransactionRunner` takes a connection from the pool, sets auto-commit off and binds the connection to the work
@@ -190,11 +194,18 @@ main class may depend on them.
       them with `getObject(column, UUID.class)` / `getObject(column, OffsetDateTime.class)`: no `CAST` needed.
     The schema is applied by Flyway (`flyway-core` + `flyway-database-<engine>`) on the same `DataSource`, from the
     persistence adapter configuration, before the adapters are used. Do not use embedded substitutes such as H2.
+    **Graceful shutdown**: the class that creates the pool (the persistence adapter configuration, or `DbTransactions`)
+    is `AutoCloseable` and closes the `HikariDataSource`; the configuration registers it on the routing through
+    `configuration/CloseOnStop`, an `HttpFeature` without routes that closes it in `afterStop()`. Helidon calls it
+    once the server accepts no more connections and running requests have completed or `server.shutdown-grace-period`
+    (default `PT0.5S`, set it in `application.yaml`) has elapsed; the server's JVM shutdown hook (on by default) runs
+    this sequence on `SIGTERM`. Do not close the pool from a separate `Runtime.addShutdownHook`, which may run while
+    requests are still served.
     With several contexts, **each context owns a database schema** (for example `shop_order`, `shop_billing`) and
     migrates it with its own Flyway (`.schemas("shop_billing").locations("classpath:db/migration/billing")`, which
     also keeps its history table in that schema); its SQL names the schema, and no foreign key crosses contexts.
 14. **Naming**: interfaces as in rule 3, `*Service`, `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`,
-    `<Target>RestAdapter` (or the technology used), `JdbcTransactionRunner`, `DbTransactions`,
+    `<Target>RestAdapter` (or the technology used), `JdbcTransactionRunner`, `DbTransactions`, `CloseOnStop`,
     `<Context><Kind>AdapterConfiguration`, `<Context>Configuration`, `<App>Configuration`,
     `<App>Application`.
 15. **Rich domain model, immutable value objects.** The domain is **not anemic** (an *anemic domain model* is one whose
@@ -295,8 +306,13 @@ Complement with, in this order of importance:
   (routing, `HttpService`, error handling, media support), Config, WebClient, Testing (`@ServerTest`,
   `@RoutingTest`, `@SetUpRoute`), Dependency Management; preview status of Injection, Declarative and Data.
 - Helidon examples, branch `helidon-4.x`: `quickstarts/helidon-quickstart-se`.
-- HikariCP: version 5.0.1 managed by `io.helidon:helidon-dependencies:4.5.6` (`version.lib.hikaricp`); the rollback and
-  auto-commit reset on close come from the sources of `com.zaxxer.hikari.pool.ProxyConnection` and `PoolBase` (5.0.1).
+- HikariCP: version 5.0.1 managed by `io.helidon:helidon-dependencies:4.5.6` (`version.lib.hikaricp`), Helidon's Hikari
+  modules listed in `io.helidon:helidon-bom:4.5.6`; the rollback and auto-commit reset on close come from the sources
+  of `com.zaxxer.hikari.pool.ProxyConnection` and `PoolBase` (5.0.1).
+- Graceful shutdown: Helidon 4.5.6 sources of `io.helidon.webserver` (`ServerListener.stop()`: closes the server
+  socket, waits up to `shutdownGracePeriod`, then calls `router.afterStop()`; `HttpRoutingImpl.afterStop()` calls the
+  features; `WebServerConfig.shutdownHook()` defaults to `true`; `ListenerConfig.shutdownGracePeriod()` defaults to
+  `PT0.5S`), confirmed by `CloseOnStopTest` and by Hikari's "Shutdown completed" log at the end of the `*IT` tests.
 - `ScopedValue`: JEP 506 (final in JDK 25). The JDBC persistence, the shared transaction across contexts and the
   PostgreSQL type mappings were confirmed by running both Helidon examples (`mvn verify`) against PostgreSQL 17.
 - Rich domain model and value objects: Martin Fowler, "AnemicDomainModel" (https://martinfowler.com/bliki/AnemicDomainModel.html);

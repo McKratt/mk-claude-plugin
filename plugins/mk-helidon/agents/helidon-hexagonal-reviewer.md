@@ -47,6 +47,10 @@ You never modify files.
    return the connection to the pool in every case, and not let a failing `rollback()` hide the original exception.
    A `SQLException` rethrown as `IllegalArgumentException` is a finding (the web adapters turn that into a `400`).
    Use of Helidon DbClient (`io.helidon.dbclient..`) instead of JDBC on the Hikari pool is an observation.
+   A connection pool that is never closed when the server stops (expected: registered on the routing through an
+   `HttpFeature` such as `CloseOnStop`, closed in `afterStop()`), or closed from a separate `Runtime.addShutdownHook`,
+   is a finding. An explicit HikariCP version in the `pom.xml`, overriding the one managed by the Helidon BOM, is a
+   finding (compatibility with the Helidon release).
 5. **Input models.** Each use case has its own command / input model that validates itself on construction.
 6. **Rich domain and value objects** (rule "Rich domain model, immutable value objects" of the skill). Entities and
    aggregates in `domain` carry the behavior that changes their state and protect their invariants. Findings:
