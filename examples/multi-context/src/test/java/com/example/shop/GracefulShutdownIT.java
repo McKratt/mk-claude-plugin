@@ -25,7 +25,7 @@ class GracefulShutdownIT {
         var dataSource = context.getBean(HikariDataSource.class);
         assertThat(context.getBean(ServerProperties.class).getShutdown()).isEqualTo(Shutdown.GRACEFUL);
         assertThat(context.getBean(LifecycleProperties.class).getTimeoutPerShutdownPhase())
-                .isEqualTo(Duration.ofSeconds(5));
+                .isEqualTo(Duration.ofSeconds(30));
         assertThat(dataSource.isClosed()).isFalse();
 
         context.close();
