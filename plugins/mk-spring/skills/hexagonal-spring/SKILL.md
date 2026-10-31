@@ -202,6 +202,14 @@ Complement with, in this order of importance:
 - Application services carry no stereotype: wire them with `@Bean` methods in `configuration/<Context>Configuration` (rule 11).
   `@Transactional` (and method security) on their methods, never on the class, are the only Spring annotations in
   `application`; the domain has none.
+- **Graceful shutdown**: state it in `application.yaml` with `server.shutdown: graceful` and
+  `spring.lifecycle.timeout-per-shutdown-phase` (template provided), even though graceful is the Spring Boot 4 default:
+  on `SIGTERM` (Spring Boot's JVM shutdown hook is on by default) the web server stops accepting requests and lets
+  running ones complete within that timeout (default 30s), then the context destroys its beans, which closes the
+  Hikari pool. The pool is the auto-configured `DataSource` bean or a `@Bean` returning the pool type, whose `close()`
+  Spring calls as an inferred destroy method: never close it by hand, from a `Runtime.addShutdownHook` or a
+  `@PreDestroy`, and never set `destroyMethod = ""` on it. Prove it with a `GracefulShutdownIT` that starts the
+  application itself, closes it and checks the pool is closed (template provided).
 - **Multi-module option**: separate Maven modules (`application` including its `domain` package, `adapter-web`,
   `adapter-persistence`, `bootstrap`) make illegal dependencies impossible to compile. Offer it for larger projects;
   single module plus ArchUnit is the default.
@@ -246,6 +254,12 @@ Complement with, in this order of importance:
 - **Application services versus domain services**: Vaughn Vernon, *Implementing Domain-Driven Design*
   (Addison-Wesley, 2013), chapters "Application" (application services: use cases, transactions, security) and
   "Services" (domain services: optional, for domain operations that do not belong to one entity or value object).
+- Graceful shutdown: Spring Boot 4.1.2 sources (`ServerProperties.shutdown` defaults to `Shutdown.GRACEFUL`;
+  `LifecycleProperties.timeoutPerShutdownPhase` to 30 seconds; `ApplicationProperties.registerShutdownHook` to `true`;
+  the Hikari `DataSource` is a `@Bean` in `DataSourceConfiguration`) and Spring Framework 7.0.10
+  `AbstractApplicationContext.doClose()` (lifecycle beans, the web server among them, stopped before `destroyBeans()`),
+  confirmed by `GracefulShutdownIT` in both examples (Tomcat's "Graceful shutdown complete", then Hikari's
+  "Shutdown completed").
 - Chapter topics of Hombergs' book used: use cases and input validation, web and persistence adapters, testing,
   mapping strategies, assembling the application, conscious shortcuts and boundary enforcement.
 - Rich domain model and value objects: Martin Fowler, "AnemicDomainModel" (https://martinfowler.com/bliki/AnemicDomainModel.html);
