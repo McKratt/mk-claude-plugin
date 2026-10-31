@@ -7,7 +7,7 @@ allowed_tools: [Skill, Read, Glob, Grep]
 ---
 
 New Helidon SE service on Java 25: group `com.acme`, artifact `shop`, base package `com.acme.shop`, a single bounded
-context, Helidon DbClient over JDBC on PostgreSQL with Flyway. Its first use case is placing an order: the order is
+context, plain JDBC with a HikariCP pool on PostgreSQL with Flyway. Its first use case is placing an order: the order is
 saved and the stock of each product is decremented, both in the same database transaction.
 
 Do not create any file and do not ask me anything. Answer with:
