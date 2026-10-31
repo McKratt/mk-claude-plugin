@@ -6,6 +6,8 @@ import io.helidon.config.Config;
 import io.helidon.config.ConfigSources;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import org.testcontainers.containers.PostgreSQLContainer;
 
@@ -26,14 +28,25 @@ final class TestInfrastructure {
     private TestInfrastructure() {
     }
 
-    /** The application's configuration, with the containers' addresses taking precedence over application.yaml. */
+    /**
+     * The application's configuration on a random port, with the containers' addresses taking precedence over
+     * application.yaml.
+     */
     static Config config() {
+        return config(Map.of());
+    }
+
+    /** The same configuration, with these keys replaced. */
+    static Config config(Map<String, String> overrides) {
+        var values = new HashMap<>(Map.of(
+                "server.port", "0",
+                "db.connection.url", POSTGRES.getJdbcUrl(),
+                "db.connection.username", POSTGRES.getUsername(),
+                "db.connection.password", POSTGRES.getPassword(),
+                "shipping.base-url", SHIPPING.baseUrl()));
+        values.putAll(overrides);
         return Config.builder()
-                .addSource(ConfigSources.create(Map.of(
-                        "db.connection.url", POSTGRES.getJdbcUrl(),
-                        "db.connection.username", POSTGRES.getUsername(),
-                        "db.connection.password", POSTGRES.getPassword(),
-                        "shipping.base-url", SHIPPING.baseUrl())))
+                .addSource(ConfigSources.create(values))
                 .addSource(ConfigSources.classpath("application.yaml"))
                 .disableEnvironmentVariablesSource()
                 .disableSystemPropertiesSource()
@@ -60,6 +73,38 @@ final class TestInfrastructure {
             return resultSet.getLong(1);
         } catch (SQLException e) {
             throw new IllegalStateException(e);
+        }
+    }
+
+    /** The number of connections open in PostgreSQL under this JDBC application name. */
+    static long connectionsOf(String applicationName) {
+        try (var connection = DriverManager.getConnection(
+                        POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+                var statement = connection.prepareStatement(
+                        "SELECT count(*) FROM pg_stat_activity WHERE application_name = ?")) {
+            statement.setString(1, applicationName);
+            try (var resultSet = statement.executeQuery()) {
+                resultSet.next();
+                return resultSet.getLong(1);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** Waits for PostgreSQL to see the connections gone: a backend ends shortly after its client closes it. */
+    static void awaitNoConnectionsOf(String applicationName) {
+        var deadline = Instant.now().plusSeconds(10);
+        while (connectionsOf(applicationName) > 0) {
+            if (Instant.now().isAfter(deadline)) {
+                throw new AssertionError("Connections of " + applicationName + " are still open");
+            }
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            }
         }
     }
 }

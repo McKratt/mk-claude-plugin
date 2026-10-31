@@ -2,38 +2,40 @@ package com.example.shop;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.example.shop.configuration.RunningApplication;
 import com.example.shop.configuration.ShopConfiguration;
 import io.helidon.http.HeaderNames;
 import io.helidon.http.Status;
 import io.helidon.webclient.http1.Http1Client;
 import io.helidon.webclient.http1.Http1ClientResponse;
-import io.helidon.webserver.http.HttpRouting;
-import io.helidon.webserver.testing.junit5.ServerTest;
-import io.helidon.webserver.testing.junit5.SetUpRoute;
 import java.util.regex.Pattern;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
  * Placing an order in the order context creates the invoice in the billing context (through
- * BillingDomainAdapter), checked through billing's own HTTP endpoint. Real Helidon web server on a random
- * port, the application's own wiring, real PostgreSQL (Testcontainers).
+ * BillingDomainAdapter), checked through billing's own HTTP endpoint. The application is started as main starts it,
+ * on a random port, with a real PostgreSQL (Testcontainers).
  */
-@ServerTest
 class OrderToInvoiceIT {
 
     private static final Pattern ID = Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-fA-F-]{36})\"");
 
-    private final Http1Client client;
+    private static RunningApplication application;
+    private static Http1Client client;
 
-    OrderToInvoiceIT(Http1Client client) {
-        this.client = client;
+    /** The same start as main, fed with the test configuration. */
+    @BeforeAll
+    static void start_application() {
+        application = ShopConfiguration.start(TestInfrastructure.config());
+        client = Http1Client.builder().baseUri("http://localhost:" + application.port()).build();
     }
 
-    /** The same assembly as main, fed with the test configuration. */
-    @SetUpRoute
-    static void routing(HttpRouting.Builder routing) {
-        ShopConfiguration.routing(routing, TestInfrastructure.config());
+    @AfterAll
+    static void stop_application() {
+        application.close();
     }
 
     @BeforeEach
@@ -116,7 +118,7 @@ class OrderToInvoiceIT {
         assertThat(count("shop_billing.invoices")).isZero();
     }
 
-    private Http1ClientResponse postOrder(String json) {
+    private static Http1ClientResponse postOrder(String json) {
         return client.post("/orders")
                 .header(HeaderNames.CONTENT_TYPE, "application/json")
                 .submit(json);

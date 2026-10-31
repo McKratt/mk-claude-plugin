@@ -22,8 +22,8 @@ Two kinds of tests, two Maven phases:
 
 - `*Test` (surefire, `test` phase): fast tests without a web server, namely the domain and service unit tests and the ArchUnit rules.
 - `*IT` (failsafe, `integration-test` phase): tests that start the web server and test a whole use
-  case against a real PostgreSQL in a container (Testcontainers): `@SpringBootTest` in the Spring projects, `@ServerTest`
-  in the Helidon one. `single-context` and `helidon-single-context` also replace the third-party shipping API with
+  case against a real PostgreSQL in a container (Testcontainers): `@SpringBootTest` in the Spring projects, the application's own
+  `ShopConfiguration.start(config)` in the Helidon ones. `single-context` and `helidon-single-context` also replace the third-party shipping API with
   WireMock (`PlaceOrderIT`).
 
 `ArchitectureRulesDetectViolationsTest` feeds deliberately bad fixture classes (in test sources, package `archfixtures`)

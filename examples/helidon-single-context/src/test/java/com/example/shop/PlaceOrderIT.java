@@ -8,33 +8,35 @@ import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.example.shop.configuration.RunningApplication;
 import com.example.shop.configuration.ShopConfiguration;
 import io.helidon.http.HeaderNames;
 import io.helidon.http.Status;
 import io.helidon.webclient.http1.Http1Client;
-import io.helidon.webserver.http.HttpRouting;
-import io.helidon.webserver.testing.junit5.ServerTest;
-import io.helidon.webserver.testing.junit5.SetUpRoute;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * The "place an order" use case through the whole stack: real Helidon web server on a random port, the
- * application's own wiring, real PostgreSQL (Testcontainers) and the shipping API replaced by WireMock.
+ * The "place an order" use case through the whole stack: the application started as main starts it, on a random
+ * port, with a real PostgreSQL (Testcontainers) and the shipping API replaced by WireMock.
  */
-@ServerTest
 class PlaceOrderIT {
 
-    private final Http1Client client;
+    private static RunningApplication application;
+    private static Http1Client client;
 
-    PlaceOrderIT(Http1Client client) {
-        this.client = client;
+    /** The same start as main, fed with the test configuration. */
+    @BeforeAll
+    static void start_application() {
+        application = ShopConfiguration.start(TestInfrastructure.config());
+        client = Http1Client.builder().baseUri("http://localhost:" + application.port()).build();
     }
 
-    /** The same assembly as main, fed with the test configuration. */
-    @SetUpRoute
-    static void routing(HttpRouting.Builder routing) {
-        ShopConfiguration.routing(routing, TestInfrastructure.config());
+    @AfterAll
+    static void stop_application() {
+        application.close();
     }
 
     @BeforeEach
@@ -79,7 +81,7 @@ class PlaceOrderIT {
         TestInfrastructure.SHIPPING.verify(0, postRequestedFor(urlEqualTo("/shipments")));
     }
 
-    private io.helidon.webclient.http1.Http1ClientResponse postOrder(String json) {
+    private static io.helidon.webclient.http1.Http1ClientResponse postOrder(String json) {
         return client.post("/orders")
                 .header(HeaderNames.CONTENT_TYPE, "application/json")
                 .submit(json);

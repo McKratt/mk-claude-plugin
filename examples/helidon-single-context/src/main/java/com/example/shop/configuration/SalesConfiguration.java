@@ -17,10 +17,11 @@ public final class SalesConfiguration {
     private SalesConfiguration() {
     }
 
-    public static void routing(HttpRouting.Builder routing, Config config, Clock clock) {
-        var persistence = new SalesPersistenceAdapterConfiguration(config.get("db"));
-        routing.addFeature(new CloseOnStop(persistence));
+    static void routing(HttpRouting.Builder routing, Config config, Clock clock, ApplicationResources resources) {
+        // Before the pool: a wrong setting fails the start without opening connections.
         var shipmentRequester = SalesShippingRestAdapterConfiguration.shipmentRequester(config.get("shipping"));
+        var persistence = new SalesPersistenceAdapterConfiguration(config.get("db"));
+        resources.add(persistence);
 
         var orderPlacement = new PlaceOrderService(
                 persistence.orderStore(), shipmentRequester, persistence.transactionRunner(), clock);

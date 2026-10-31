@@ -84,7 +84,8 @@ Layout of a hexagon (`<hexagon>` = `<base>` or `<base>/<context>`):
 
 The `configuration` package holds **one file per bounded context**, `<Context>Configuration` (with a single context,
 named after its domain, for example `SalesConfiguration`), which wires the adapters and application services of that
-context (rule 11), and `<App>Configuration`, the application-wide assembly called by `main` and by the `*IT` tests.
+context (rule 11), and `<App>Configuration`, the application-wide assembly whose `start(Config)` is called by `main`
+and by the `*IT` tests.
 
 There is **no dependency injection container**. The `configuration` classes are the composition root: they create
 the objects with `new` and pass them along. They may depend on anything; only other configuration classes and the
@@ -168,10 +169,18 @@ main class may depend on them.
     an instance class (rule 8). In this order, it creates the outgoing adapters through their `*AdapterConfiguration`
     (passing the relevant `Config` node, such as `config.get("db")`), creates the application services with `new`, and
     registers the web adapters through the web `*AdapterConfiguration`. `configuration/<App>Configuration` creates the
-    shared objects and calls each context's configuration; it is called by `main` and by the `*IT` tests, so the tests
-    run the real wiring. The configuration that creates the connection pool (the context's with a single context,
-    `<App>Configuration` with `DbTransactions`) registers it with `routing.addFeature(new CloseOnStop(pool))` for the
-    graceful shutdown (rule 13).
+    shared objects and calls each context's configuration. It exposes **`start(Config)`**, which builds and starts the
+    `WebServer` from `config.get("server")` and returns a `RunningApplication`, a closeable handle with `port()`.
+    `main` and every `*IT` test call this one method, so the tests run the real wiring and the real startup. `start`
+    must:
+    - check `server.isRunning()` and throw otherwise: Helidon's `WebServer.start()` only logs a failed start, such as a
+      port already in use, and returns a stopped server;
+    - release what it created when the startup fails. The configuration that creates the connection pool (the
+      context's with a single context, `<App>Configuration` with `DbTransactions`) adds it to `ApplicationResources`,
+      which `start` closes on failure and registers with `routing.addFeature(new CloseOnStop(resources))` for the
+      graceful shutdown (rule 13). A constructor that fails after creating the pool closes it itself, since its caller
+      gets nothing to close;
+    - create the cheap objects first, so that a wrong setting fails the start before a pool is opened.
 12. **Configuration** is Helidon Config in `src/main/resources/application.yaml` (dependency `helidon-config-yaml`),
     created once in `main` with `Config.create()` and passed down explicitly as `Config` nodes. Do not read it from
     adapters or services through `Services.get(Config.class)` or `Config.global()`. Environment variables override keys
@@ -195,17 +204,20 @@ main class may depend on them.
     The schema is applied by Flyway (`flyway-core` + `flyway-database-<engine>`) on the same `DataSource`, from the
     persistence adapter configuration, before the adapters are used. Do not use embedded substitutes such as H2.
     **Graceful shutdown**: the class that creates the pool (the persistence adapter configuration, or `DbTransactions`)
-    is `AutoCloseable` and closes the `HikariDataSource`; the configuration registers it on the routing through
-    `configuration/CloseOnStop`, an `HttpFeature` without routes that closes it in `afterStop()`. Helidon calls it
+    is `AutoCloseable` and closes the `HikariDataSource`; it is added to `ApplicationResources`, which `start` registers
+    on the routing through `configuration/CloseOnStop`, an `HttpFeature` without routes that closes them in
+    `afterStop()`. Helidon calls it
     once the server accepts no more connections and running requests have completed or `server.shutdown-grace-period`
     (default `PT0.5S`, set it in `application.yaml`) has elapsed; the server's JVM shutdown hook (on by default) runs
     this sequence on `SIGTERM`. Do not close the pool from a separate `Runtime.addShutdownHook`, which may run while
-    requests are still served.
+    requests are still served. For the same reason `main` adds no hook: `RunningApplication.close()`, used by the tests,
+    calls `server.stop()`, the sequence the server's hook runs.
     With several contexts, **each context owns a database schema** (for example `shop_order`, `shop_billing`) and
     migrates it with its own Flyway (`.schemas("shop_billing").locations("classpath:db/migration/billing")`, which
     also keeps its history table in that schema); its SQL names the schema, and no foreign key crosses contexts.
 14. **Naming**: interfaces as in rule 3, `*Service`, `*Controller`, `*PersistenceAdapter`, `*DomainAdapter`,
     `<Target>RestAdapter` (or the technology used), `JdbcTransactionRunner`, `DbTransactions`, `CloseOnStop`,
+    `ApplicationResources`, `RunningApplication`,
     `<Context><Kind>AdapterConfiguration`, `<Context>Configuration`, `<App>Configuration`,
     `<App>Application`.
 15. **Rich domain model, immutable value objects.** The domain is **not anemic** (an *anemic domain model* is one whose
@@ -243,10 +255,16 @@ Helidon mechanics.
 **Priority: tests that cover a whole use case**, named `*IT` and run by `maven-failsafe-plugin` in the
 integration-test phase (`mvn verify`); surefire keeps the fast `*Test` tests.
 
-- Annotate with Helidon's **`@ServerTest`** (`helidon-webserver-testing-junit5`): it starts the WebServer on a random
-  port and injects an `Http1Client` bound to it.
-- A static **`@SetUpRoute`** method calls the application's own `<App>Configuration.routing(routing, testConfig)`, so
-  the real wiring is tested.
+- Start the application with **`<App>Configuration.start(testConfig)`** in `@BeforeAll`, with `server.port=0` in the test
+  configuration, and close the returned handle in `@AfterAll`. What the tests start is what production starts, with only
+  the addresses of the containers changed. Build the client from `port()`: `Http1Client`, REST Assured or any other.
+- **This departs from Helidon's testing documentation**, which shows `@ServerTest` and `@SetUpRoute`, on purpose: there,
+  Helidon's extension builds the server and the application contributes only its routing, so the server configuration,
+  the startup order and a failed start are not tested.
+- **Test the startup itself** in an `ApplicationLifecycleIT`: closing the application closes the connection pool, a
+  port already in use makes `start` throw and leaves no connection open, and so does a failed migration. Name the pool
+  in the JDBC URL (`ApplicationName` with PostgreSQL) and count its connections in `pg_stat_activity`. Add the use cases
+  of the application's startup, such as starting while a dependency is down.
 - The database is a **real one in a container** (Testcontainers, same engine as production; the Testcontainers version
   is managed by the Helidon BOM, use `${version.lib.testcontainers}` for modules it does not list, such as `postgresql`).
   **Third-party services are mocked with WireMock** (`org.wiremock:wiremock-standalone`, dynamic port). Start both once
@@ -262,7 +280,9 @@ Complement with, in this order of importance:
 - **Application services**: unit tests with mocked outgoing ports (Mockito, BDD notation) and a `TransactionRunner` that simply
   runs the work, only for branching logic that is awkward to reach through the use case tests.
 - **`@RoutingTest`** (no socket, `DirectClient`): only when a use case test cannot reach the behavior, for example
-  exhaustive request validation. It is the exception, not the default.
+  exhaustive request validation. It is the exception, not the default. **`@ServerTest`** is acceptable for a test of a
+  single `HttpService` that needs a real socket but not the application's startup. Both need the test dependency
+  `helidon-webserver-testing-junit5`, which the examples do not have.
 
 ## 6. Workflow
 
@@ -305,6 +325,10 @@ Complement with, in this order of importance:
 - Helidon 4.5.6 documentation (`docs/` of tag `4.5.6`, published at https://helidon.io/docs/v4/): SE WebServer
   (routing, `HttpService`, error handling, media support), Config, WebClient, Testing (`@ServerTest`,
   `@RoutingTest`, `@SetUpRoute`), Dependency Management; preview status of Injection, Declarative and Data.
+- `start(Config)` in place of `@ServerTest`: feedback from the `authorization-server` project, then both Helidon examples.
+  A failed start: Helidon 4.5.6 sources of `LoomServer.startIt()` (logs "Helidon WebServer failed to start", stops the
+  listeners and returns without throwing), confirmed by `ApplicationLifecycleIT` and by running the example's jar with
+  its port taken.
 - Helidon examples, branch `helidon-4.x`: `quickstarts/helidon-quickstart-se`.
 - HikariCP: version 5.0.1 managed by `io.helidon:helidon-dependencies:4.5.6` (`version.lib.hikaricp`), Helidon's Hikari
   modules listed in `io.helidon:helidon-bom:4.5.6`; the rollback and auto-commit reset on close come from the sources

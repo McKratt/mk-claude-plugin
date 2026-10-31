@@ -98,11 +98,6 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>io.helidon.webserver.testing.junit5</groupId>
-      <artifactId>helidon-webserver-testing-junit5</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
       <groupId>org.testcontainers</groupId>
       <artifactId>postgresql</artifactId>
       <!-- Same version as the Testcontainers modules the Helidon BOM manages. -->
