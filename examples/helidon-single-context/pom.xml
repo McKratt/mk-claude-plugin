@@ -26,7 +26,7 @@
     <!-- Not managed by the Helidon BOM. -->
     <lombok.version>1.18.48</lombok.version>
     <jspecify.version>1.0.1</jspecify.version>
-    <flyway.version>13.11.1</flyway.version>
+    <flyway.version>13.12.1</flyway.version>
     <archunit.version>1.5.1</archunit.version>
     <assertj.version>3.27.7</assertj.version>
     <mockito.version>5.24.0</mockito.version>
@@ -139,7 +139,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-enforcer-plugin</artifactId>
-        <version>3.6.3</version>
+        <version>3.7.0</version>
         <executions>
           <execution>
             <id>enforce-toolchain</id>
